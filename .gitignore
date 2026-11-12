@@ -1,0 +1,37 @@
+# Secrets & environment files (keep .env.example templates only)
+.env
+.env.*
+!.env.example
+
+# Python environments & caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local SQLite databases & fallback runtime data
+*.db
+*.sqlite
+*.sqlite3
+backend/data/
+agent_backend/data/
+
+# Node / Frontend builds & dependencies
+node_modules/
+dist/
+dist-ssr/
+build/
+*.local
+
+# Agent & IDE internal folders
+.agent/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

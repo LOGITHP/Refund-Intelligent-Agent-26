@@ -1,0 +1,61 @@
+flowchart LR
+    subgraph Users["Users"]
+        Customer["Customer"]
+        Merchant["Merchant / Seller"]
+    end
+
+    subgraph Frontends["Shipkart Frontends (React 18 + Vite 5)"]
+        CustomerUI["Customer Storefront (:3000)<br/>Home, Cart, Split Checkout, Tracking"]
+        MerchantUI["Merchant Seller Hub (:3001)<br/>Dashboard, Listings, Orders, Returns, Payment Settings"]
+    end
+
+    subgraph Backend["Shipkart Backend (FastAPI :8000)"]
+        AuthCatalog["Auth, Catalog & Cart APIs<br/>/auth, /products, /cart"]
+        OrderService["Orders, Reservations & Invoices<br/>/orders, /invoices (ReportLab)"]
+        PayPalService["Merchant-Direct PayPal & Webhooks<br/>/payments/paypal, /merchant, /webhooks"]
+        ReturnsBridge["Returns & REF-001 Bridge Guard<br/>/returns, /agent-decision, /execute-approved-refund"]
+        MediaProxy["Media Streaming Proxy<br/>/media/upload, /media/files"]
+    end
+
+    subgraph DataLayer["Shipkart Data & Object Storage"]
+        DB[("PostgreSQL 16 / SQLite<br/>12 Tables + Append-Only Ledger")]
+        MinIO[("MinIO S3 Storage<br/>(Local Fallback ./data/minio_fallback)")]
+    end
+
+    subgraph External["External Services & Companion Platform"]
+        PayPalSDK["PayPal JS SDK<br/>(Browser Hosted Buttons)"]
+        PayPalREST["PayPal REST API v2<br/>(Sandbox / Live)"]
+        AgentPlatform["Refund Intelligence Platform (:8100)<br/>(External Companion Repo — Hosts AI Agents)"]
+    end
+
+    Customer --> CustomerUI
+    Merchant --> MerchantUI
+
+    CustomerUI -->|JWT Bearer| AuthCatalog
+    CustomerUI -->|JWT Bearer| OrderService
+    CustomerUI -->|JWT Bearer| PayPalService
+    CustomerUI -->|JWT Bearer| ReturnsBridge
+    CustomerUI -->|JWT Bearer| MediaProxy
+    CustomerUI -->|Hosted Checkout| PayPalSDK
+    CustomerUI -.->|"Dossier, Appeals, Support Chat (Optional)"| AgentPlatform
+
+    MerchantUI -->|JWT Bearer| AuthCatalog
+    MerchantUI -->|JWT Bearer| OrderService
+    MerchantUI -->|JWT Bearer| PayPalService
+    MerchantUI -->|JWT Bearer| ReturnsBridge
+    MerchantUI -->|JWT Bearer| MediaProxy
+    MerchantUI -.->|"AI Dossier & REF-001 Approval Sync (Optional)"| AgentPlatform
+
+    PayPalSDK <--> PayPalREST
+
+    AuthCatalog <--> DB
+    OrderService <--> DB
+    PayPalService <--> DB
+    ReturnsBridge <--> DB
+    OrderService --> MinIO
+    MediaProxy <--> MinIO
+
+    PayPalService <-->|"OAuth2, Orders, Captures, Refunds, AES-256-GCM Keys"| PayPalREST
+    PayPalREST -->|"Signed Webhooks (/webhooks/paypal)"| PayPalService
+    ReturnsBridge -->|"HMAC-SHA256 Return Events (Best Effort)"| AgentPlatform
+    AgentPlatform -->|"Service JWT (Context, Status, Advisory Decision)"| ReturnsBridge

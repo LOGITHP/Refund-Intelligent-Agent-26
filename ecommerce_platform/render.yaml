@@ -1,0 +1,81 @@
+databases:
+  - name: shipkart-db
+    databaseName: shipkart
+    user: shipkart
+    plan: free
+    region: oregon
+
+services:
+  - type: web
+    name: shipkart-api-26
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./ecommerce_platform/backend/Dockerfile
+    dockerContext: ./ecommerce_platform/backend
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: shipkart-db
+          property: connectionString
+      - key: SECRET_KEY
+        sync: false
+      - key: APP_DATA_ENCRYPTION_KEY
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: PAYPAL_ENV
+        value: SANDBOX
+      - key: MINIO_ENDPOINT
+        sync: false
+      - key: MINIO_ACCESS_KEY
+        sync: false
+      - key: MINIO_SECRET_KEY
+        sync: false
+      - key: MINIO_PUBLIC_URL
+        sync: false
+      - key: MINIO_SECURE
+        value: "true"
+      - key: AGENT_PLATFORM_URL
+        sync: false
+      - key: BRIDGE_SHARED_SECRET
+        sync: false
+      - key: SERVICE_JWT_SECRET
+        sync: false
+      - key: SERVICE_JWT_ISSUER
+        value: refund-intelligence-platform
+      - key: CORS_ORIGINS
+        value: https://shipkart-customer-26.onrender.com,https://shipkart-merchant-26.onrender.com,https://refund-ops-26.onrender.com
+
+  - type: web
+    name: shipkart-customer-26
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./ecommerce_platform/customer_frontend/Dockerfile
+    dockerContext: ./ecommerce_platform/customer_frontend
+    envVars:
+      - key: VITE_API_URL
+        value: https://shipkart-api-26.onrender.com
+      - key: VITE_AGENT_API_URL
+        value: https://refund-agent-api-26.onrender.com
+
+  - type: web
+    name: shipkart-merchant-26
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./ecommerce_platform/merchant_frontend/Dockerfile
+    dockerContext: ./ecommerce_platform/merchant_frontend
+    envVars:
+      - key: VITE_API_URL
+        value: https://shipkart-api-26.onrender.com
+      - key: VITE_AGENT_API_URL
+        value: https://refund-agent-api-26.onrender.com
+      - key: VITE_OPS_CONSOLE_URL
+        value: https://refund-ops-26.onrender.com

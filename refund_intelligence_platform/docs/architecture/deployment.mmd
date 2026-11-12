@@ -1,0 +1,50 @@
+flowchart TB
+    subgraph DockerNet["Docker Compose Network: agent_net (docker-compose.yml)"]
+        subgraph UI["Frontend Container"]
+            OpsFE["ops_frontend (Nginx)\nHost :3002 -> Container :3002"]
+        end
+
+        subgraph BackendAndWorkers["Backend & Celery Containers (Python 3.12-slim)"]
+            AgentBE["agent_backend (Uvicorn/FastAPI)\nHost :8100 -> Container :8100\nalembic upgrade head on boot"]
+            CeleryWorker["celery_worker\ncelery -A app.worker.celery_app worker"]
+            CeleryBeat["celery_beat\ncelery -A app.worker.celery_app beat"]
+        end
+
+        subgraph StateStores["Data & Storage Containers + Named Volumes"]
+            PG["postgres (postgres:16-alpine)\nHost :5433 -> :5432\nVol: agent_postgres_data"]
+            Redis["redis (redis:7-alpine)\nHost :6379 -> :6379\nVol: agent_redis_data"]
+            MinIO["minio (chainguard/minio)\nHost :9002/:9003 -> :9000/:9001\nVol: agent_minio_data"]
+        end
+
+        subgraph Simulators["Simulated Downstream Containers [Simulated / Mocked]"]
+            IssuerSim["issuer_simulator\nHost :8201 -> :8201"]
+            RegSim["regulatory_simulator\nHost :8202 -> :8202"]
+            CarrierSim["carrier_simulator\nHost :8203 -> :8203"]
+        end
+    end
+
+    subgraph ExternalHost["Host / External Services"]
+        Shipkart["Shipkart (ecommerce_platform)\nhttp://host.docker.internal:8000\n(Customer :3000, Merchant :3001)"]
+        NIM["NVIDIA NIM Cloud\nintegrate.api.nvidia.com/v1"]
+        PayPal["PayPal REST API\napi-m.sandbox.paypal.com"]
+    end
+
+    OpsFE --> AgentBE
+    AgentBE --> PG
+    AgentBE --> Redis
+    AgentBE --> MinIO
+    AgentBE --> IssuerSim
+    AgentBE --> RegSim
+    AgentBE --> CarrierSim
+    AgentBE <-->|extra_hosts + HMAC / Service JWT| Shipkart
+    AgentBE -.-> NIM
+    AgentBE -.-> PayPal
+
+    CeleryBeat --> Redis
+    CeleryWorker --> Redis
+    CeleryWorker --> PG
+    CeleryWorker --> MinIO
+    CeleryWorker --> IssuerSim
+    CeleryWorker --> RegSim
+    CeleryWorker --> CarrierSim
+    CeleryWorker <--> Shipkart

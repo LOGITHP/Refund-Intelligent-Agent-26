@@ -1,0 +1,82 @@
+flowchart TB
+    subgraph Entrypoint["FastAPI App (app/main.py :8100)"]
+        Middleware["CORS + X-Request-ID Middleware\n& RedactingFormatter"]
+        ErrHandlers["Handlers: ComplianceViolationError,\nEvidenceValidationError, PayPalAPIError,\nSimulatorClientError, ShipkartBridgeError"]
+    end
+
+    subgraph Routers["API v1 Routers (app/api/v1/router.py)"]
+        CustRoutes["Customer Routes\n/returns, /returns/{id}/evidence,\n/refunds/{id}/intelligence|timeline|eta|chat|appeals"]
+        MerchRoutes["Merchant Routes\n/merchant/returns, /merchant/returns/{id}/inspect|transition,\n/merchant/refunds/{id}|investigation|approve|reject"]
+        AgentRoutes["Agent Routes\n/agents/intake, /agents/investigate/{id},\n/agents/resolve/{id}, /agents/executions|decisions"]
+        OpsRoutes["Operations Routes\n/operations/auth/*, /overview, /cases,\n/integrations/health, /eta, /compliance, /audit,\n/issuer-simulator/*, /carrier-simulator/*, /regulatory/*"]
+        InternalRoutes["Internal, Bridge & Payment Routes\n/bridge/shipkart/return-event (HMAC),\n/payments/paypal/refund, /webhooks/paypal,\n/internal/eta|delays|reconciliation|followups|audit"]
+    end
+
+    subgraph Security["Security & RBAC (app/core/security.py)"]
+        AuthDeps["get_current_actor, require_roles,\nverify_bridge_hmac, verify_shipkart_user_token,\nverify_service_jwt, scrypt platform_users auth"]
+        Redact["Redaction Filter (DATA-001)\napp/core/logging_redact.py"]
+    end
+
+    subgraph Services["Domain Services (app/services/)"]
+        ReturnSvc["ReturnService\nQTY-001 & STATE-001/002"]
+        ApprovalSvc["ApprovalService\nImmutable REF-001 & CASE-001"]
+        ComplianceSvc["ComplianceService\nREF-001..004 & AUTH-001..002"]
+        RefundSvc["RefundService\nIdempotent Payout + SELECT FOR UPDATE"]
+        ReconcileSvc["ReconciliationService\nPAY-002 Webhook & Polling"]
+        DelaySvc["DelayService\nDELAY-001..006 SLA Rules"]
+        EtaSvc["ETAService\nStage-Remaining Snapshot"]
+        EvidenceSvc["EvidenceService\nMagic Bytes, Pillow, SHA-256"]
+        TimelineSvc["TimelineService\nDual Physical/Financial Track"]
+        AuditSvc["AuditService\nAppend-Only AuditLog"]
+        SyncSvc["shipkart_sync_service\nDecision Relay (execute_paypal_refund=False)"]
+    end
+
+    subgraph Integrations["Integration Clients & Background Tasks"]
+        ShipkartCli["ShipkartBridgeClient (HTTPX + Service JWT)"]
+        PayPalCli["PayPalClient (OAuth2 + Captures/Refunds/Webhook Sig)"]
+        MinioCli["AgentMinIOClient (Private Buckets + Presigned URLs)"]
+        SimClis["Simulator Clients\nCarrier / Issuer / Regulatory (HTTPX)"]
+        CeleryTasks["Celery Tasks (app/worker/tasks.py)\npipeline, followups, reconcile, detect_delays"]
+    end
+
+    subgraph Persistence["Persistence Layer (app/db/)"]
+        Models["19 SQLAlchemy Models (models.py)\nPortable GUID / JSONB / NUMERIC(18,2)"]
+        PG[("PostgreSQL 16 (:5433)\n+ Immutability Triggers")]
+    end
+
+    Middleware --> Routers
+    Routers --> AuthDeps
+    Routers --> Redact
+
+    CustRoutes --> ReturnSvc
+    CustRoutes --> EvidenceSvc
+    CustRoutes --> TimelineSvc
+    CustRoutes --> EtaSvc
+    MerchRoutes --> ReturnSvc
+    MerchRoutes --> ApprovalSvc
+    InternalRoutes --> RefundSvc
+    InternalRoutes --> ReconcileSvc
+    InternalRoutes --> DelaySvc
+    InternalRoutes --> EtaSvc
+    AgentRoutes --> SyncSvc
+    OpsRoutes --> DelaySvc
+    OpsRoutes --> EtaSvc
+    OpsRoutes --> SimClis
+
+    RefundSvc --> ComplianceSvc
+    RefundSvc --> PayPalCli
+    RefundSvc --> AuditSvc
+    ApprovalSvc --> ComplianceSvc
+    ApprovalSvc --> AuditSvc
+    ReturnSvc --> ComplianceSvc
+    ReturnSvc --> AuditSvc
+    EvidenceSvc --> MinioCli
+    ReconcileSvc --> ShipkartCli
+    ReconcileSvc --> TimelineSvc
+    SyncSvc --> ShipkartCli
+
+    CeleryTasks --> DelaySvc
+    CeleryTasks --> EtaSvc
+    CeleryTasks --> ReconcileSvc
+
+    Services --> Models --> PG

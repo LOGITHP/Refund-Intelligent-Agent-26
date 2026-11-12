@@ -1,0 +1,43 @@
+stateDiagram-v2
+    [*] --> ORDER_DELIVERED: Order DELIVERED (Standard or PayPal PAID)
+
+    ORDER_DELIVERED --> REQUESTED: POST /api/v1/returns/\n(within return_window_days, proportional USD calculated)
+
+    state REF001_Guard {
+        [*] --> UNDER_REVIEW
+        note right of UNDER_REVIEW
+            POST /returns/{id}/agent-decision (Service JWT)
+            Records agent_risk_score & agent_reasoning
+            Appends AGENT_RECOMMENDATION / AGENT_REJECT_RECOMMENDED / AGENT_ESCALATED
+            REF-001 Guard blocks execute_paypal_refund=True
+        end note
+    }
+
+    REQUESTED --> UNDER_REVIEW: POST /returns/{id}/agent-decision\n(Advisory only; REF-001 blocks payout)
+    REQUESTED --> UNDER_REVIEW: PATCH /returns/{id}/decision (Merchant)
+    REQUESTED --> APPROVED: PATCH /returns/{id}/decision (Merchant)
+    REQUESTED --> REJECTED: PATCH /returns/{id}/decision (Merchant)
+
+    UNDER_REVIEW --> APPROVED: PATCH /returns/{id}/decision (Merchant)
+    UNDER_REVIEW --> REJECTED: PATCH /returns/{id}/decision (Merchant)
+
+    APPROVED --> PICKUP_SCHEDULED: PATCH /returns/{id}/decision (Merchant)
+    APPROVED --> REFUND_INITIATED: PATCH /returns/{id}/decision (Merchant)
+    PICKUP_SCHEDULED --> REFUND_INITIATED: PATCH /returns/{id}/decision (Merchant)
+
+    REQUESTED --> REFUNDED: POST /returns/{id}/execute-approved-refund\n(Merchant or Service JWT + approval_reference)
+    UNDER_REVIEW --> REFUNDED: POST /returns/{id}/execute-approved-refund\n(Merchant or Service JWT + approval_reference)
+    APPROVED --> REFUNDED: POST /returns/{id}/execute-approved-refund\n(or PATCH /decision status=REFUNDED)
+    PICKUP_SCHEDULED --> REFUNDED: POST /returns/{id}/execute-approved-refund\n(or PATCH /decision status=REFUNDED)
+    REFUND_INITIATED --> REFUNDED: POST /returns/{id}/execute-approved-refund\n(or PATCH /decision status=REFUNDED)
+    REFUND_INITIATED --> REFUNDED: PayPal Webhook PAYMENT.CAPTURE.REFUNDED\n(Authoritative GET /v2/payments/refunds/{id})
+
+    note right of REFUNDED
+        PayPal orders with real capture_id (not CAP-SIM-*):
+        calls POST /v2/payments/captures/{id}/refund.
+        Standard / simulated orders: assigns local SK-REF-* ID.
+        Note: Refund API completion != card issuer bank posting.
+    end note
+
+    REFUNDED --> [*]
+    REJECTED --> [*]

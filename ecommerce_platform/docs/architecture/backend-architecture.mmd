@@ -1,0 +1,86 @@
+flowchart TB
+    subgraph Entry["FastAPI Application (app/main.py)"]
+        Main["FastAPI + CORS (*) + Lifespan<br/>Schema Init, Bucket Init, Sample Catalog Seed"]
+        Health["GET /health"]
+    end
+
+    subgraph Routers["API v1 Routers (app/api/v1/api.py)"]
+        RAuth["auth.py<br/>/api/v1/auth"]
+        RProd["products.py<br/>/api/v1/products"]
+        RCart["cart.py<br/>/api/v1/cart"]
+        ROrd["orders.py<br/>/api/v1/orders (+ bridge-context, paypal-capture-status)"]
+        RPay["payments.py<br/>/api/v1/payments/paypal"]
+        RWeb["webhooks.py<br/>/api/v1/webhooks/paypal/{merchant_id}"]
+        RMerch["merchant_payments.py<br/>/api/v1/merchant"]
+        RRet["returns.py<br/>/api/v1/returns (+ bridge/pending, agent-decision, execute-approved-refund)"]
+        RMedia["media.py<br/>/api/v1/media"]
+        RInv["invoices.py<br/>/api/v1/invoices"]
+    end
+
+    subgraph Core["Core Modules (app/core/)"]
+        Config["config.py<br/>Settings & Env Vars"]
+        Security["security.py<br/>User JWT, RBAC, Service JWT (HS256), Bridge HMAC"]
+        Crypto["crypto.py<br/>AES-256-GCM (AAD) & Secret Redaction"]
+        Timeline["timeline.py<br/>Order & Return Stepper Sync"]
+        MinioClient["minio_client.py<br/>S3 Client + Filesystem Fallback"]
+    end
+
+    subgraph Services["Domain Services (app/services/)"]
+        OrderSvc["order_service.py<br/>Stock Deduction, Decimal Totals, Allocations"]
+        InvSvc["inventory_service.py<br/>FOR UPDATE Locks, 15m TTL, Lazy Expiry"]
+        InvoiceSvc["invoice_service.py<br/>ReportLab GST/Tax PDF Generation"]
+        PayPalSvc["paypal_service.py<br/>Merchant-Direct Resolver, Token Cache, REST v2"]
+    end
+
+    subgraph Persistence["Database & Models (app/db/)"]
+        Database["database.py<br/>Engine, SessionLocal, ensure_schema_columns"]
+        Models["models.py<br/>12 ORM Tables + Append-Only Ledger Hooks"]
+        Seed["seed.py<br/>6 Starter Products (merchant_id=NULL)"]
+    end
+
+    subgraph ExternalIO["External I/O"]
+        PG[("PostgreSQL / SQLite")]
+        MinIO[("MinIO / ./data/minio_fallback")]
+        PayPal["PayPal REST API v2"]
+        Agent["Refund Intelligence Platform (:8100)"]
+    end
+
+    Main --> Health
+    Main --> Routers
+
+    RAuth --> Security
+    RProd --> InvSvc
+    RCart --> InvSvc
+    ROrd --> OrderSvc
+    ROrd --> InvSvc
+    ROrd --> InvoiceSvc
+    ROrd --> PayPalSvc
+    ROrd --> Security
+    RPay --> PayPalSvc
+    RPay --> InvSvc
+    RPay --> OrderSvc
+    RPay --> InvoiceSvc
+    RWeb --> PayPalSvc
+    RWeb --> Crypto
+    RMerch --> Crypto
+    RMerch --> PayPalSvc
+    RRet --> PayPalSvc
+    RRet --> Security
+    RRet --> Timeline
+    RMedia --> MinioClient
+    RInv --> InvoiceSvc
+
+    PayPalSvc --> Crypto
+    PayPalSvc --> PayPal
+    InvoiceSvc --> MinioClient
+    OrderSvc --> Models
+    InvSvc --> Models
+    Seed --> Models
+    Seed --> MinioClient
+
+    Models --> Database
+    Database <--> PG
+    MinioClient <--> MinIO
+    RRet -.->|"HMAC POST /api/v1/bridge/shipkart/return-event"| Agent
+    Agent -.->|"Service JWT Calls"| ROrd
+    Agent -.->|"Service JWT Calls"| RRet

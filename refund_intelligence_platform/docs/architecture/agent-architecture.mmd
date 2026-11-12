@@ -1,0 +1,48 @@
+flowchart TD
+    Trigger["Trigger:\nPOST /agents/investigate|resolve/{case_id},\nPOST /agents/intake, or Celery run_agent_pipeline_task"] --> StateInit
+
+    subgraph StateGraph["LangGraph StateGraph (app/agents/graph.py)"]
+        StateInit["Build RefundAgentState\nLoad RefundCase, ReturnCase, Shipments,\nInspections, Evidence Metadata, Approvals, Txs"]
+        StateInit --> IntakeNode
+
+        subgraph Node1["Node 1: intake_node (intake_agent.py)"]
+            Fence["Fence customer text & OCR\n<<<UNTRUSTED_CUSTOMER_TEXT>>>"]
+            InjectScan["Regex Injection Detection\n+ Duplicate SHA-256 Check"]
+            VisionCheck{"NVIDIA Key &\nimage_b64 Present?"}
+            NIMVision["NVIDIA NIM Vision/Reasoning\n(nvidia/nemotron-3.5-super-vl-120b-a12b)"]
+            Fallback1["Deterministic Fallback\n(model_name=deterministic-fallback)"]
+            IntakeOut["Persist AgentExecution + AgentDecision\n(decision_status=PROPOSED, requires_approval=True)"]
+
+            Fence --> InjectScan --> VisionCheck
+            VisionCheck -->|Yes| NIMVision --> IntakeOut
+            VisionCheck -->|No or API Error| Fallback1 --> IntakeOut
+        end
+
+        IntakeNode --> RouteGate{"route_after_intake\nstatus=REJECTED or\nerror=CASE_NOT_FOUND?"}
+        RouteGate -->|No - Normal Path| InvestNode
+        RouteGate -->|Yes - Short-Circuit| ResolveNode
+
+        subgraph Node2["Node 2: investigation_node (investigation_agent.py)"]
+            GatherData["Read Verified DB + Tool Telemetry:\nCarrier Sim (:8203), PayPal/Shipkart Bridge,\nIssuer Sim (:8201), Regulatory Sim (:8202)"]
+            DetSLA["Deterministic Services:\nDelayService (DELAY-001..006)\nETAService (Stage-Remaining)"]
+            NIMInv["Optional NIM JSON Analysis\n(Strict post-LLM re-anchor to deterministic\nETA, delay_owner, triggered_rules)"]
+            InvOut["Persist AgentExecution Trace\n(Read-Only; No AgentDecision, No Payout)"]
+
+            GatherData --> DetSLA --> NIMInv --> InvOut
+        end
+
+        InvestNode --> ResolveNode
+
+        subgraph Node3["Node 3: resolution_node (resolution_agent.py)"]
+            DetAction["Deterministic Action & Non-Final Status Mapping\n(e.g., MERCHANT_APPROVAL_PENDING,\nPAYPAL_PENDING, ESCALATED)"]
+            GuardSchema["Pydantic ResolutionOutput Guard:\nEnforces requires_approval=True (REF-001)\n& DELAY-006 Bank-Unconfirmed Wording Guard"]
+            ScheduleFollow["Create RefundFollowup Jobs\nfor DELAY-005 / DELAY-006"]
+            ResOut["Persist AgentExecution, AgentDecision (PROPOSED),\n& AuditLog; Sync Advisory Decision to Shipkart\n(execute_paypal_refund=False)"]
+
+            DetAction --> GuardSchema --> ScheduleFollow --> ResOut
+        end
+    end
+
+    ResOut --> HumanGate{"Human Merchant Gate (REF-001)\nPOST /merchant/refunds/{id}/approve|reject\nor Shipkart Merchant Panel"}
+    HumanGate -->|APPROVED| Payout["RefundService / Shipkart Merchant PayPal Execution"]
+    HumanGate -->|REJECTED with CASE-001 Reason| Closed["Case REJECTED_BY_MERCHANT"]

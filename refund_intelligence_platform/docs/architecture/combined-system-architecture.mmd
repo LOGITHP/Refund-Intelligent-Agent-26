@@ -1,0 +1,99 @@
+flowchart LR
+    subgraph Users["Users & Actors"]
+        Customer["Customer (Shopper)"]
+        Merchant["Merchant / Seller"]
+        Ops["Platform Operations Analyst"]
+    end
+
+    subgraph ExistingApp["Existing Application: Shipkart (ecommerce_platform - System of Record)"]
+        CustomerUI["Customer Storefront UI (:3000)\nRefundIntelligencePanel"]
+        MerchantUI["Merchant Seller Hub UI (:3001)\nMerchantRefundIntelligencePanel"]
+        ShipkartAPI["Shipkart Backend API (:8000)\nReturns, Orders, Merchant PayPal Isolation"]
+        ShipkartDB[("Shipkart PostgreSQL (:5432)\nOrders, Products, ReturnRequest, Merchant PayPal Secrets")]
+        ShipkartMinIO[("Shipkart MinIO (:9000)\nInvoice & Evidence Files")]
+    end
+
+    subgraph RefundPlatform["Extension Platform: Agentic Refund Intelligence (refund_intelligence_platform)"]
+        OpsUI["Operations Command Center (:3002)\nReact + Vite + Nginx"]
+        AgentAPI["Agent Core API (:8100)\nFastAPI + RBAC + Compliance Gates"]
+
+        subgraph DeterministicCore["Deterministic Engine & Services"]
+            LifecycleSvc["ReturnService & ApprovalService\n(QTY-001, CASE-001, STATE-001/002)"]
+            PolicyGate["Compliance & RefundService\n(REF-001..REF-004 Hard Blocks)"]
+            DelayEta["DelayService (DELAY-001..006)\n& ETAService (Stage-Remaining)"]
+            Reconciler["ReconciliationService (PAY-002)\n& TimelineService / AuditService"]
+        end
+
+        subgraph AgentLayer["LangGraph 3-Agent Orchestrator"]
+            Graph["StateGraph Pipeline (graph.py)"]
+            Intake["Node 1: intake_node\nEvidence & Prompt Guard"]
+            Investigate["Node 2: investigation_node\nRead-Only Telemetry & SLA Gather"]
+            Resolve["Node 3: resolution_node\nAction Proposal (requires_approval=True)"]
+        end
+
+        subgraph Workers["Async Workers"]
+            CeleryW["Celery Worker & Beat\n(5m followups, 10m PayPal poll, 15m SLA)"]
+            RedisQ[("Redis 7 Broker/Backend (:6379)")]
+        end
+
+        subgraph AgentData["Isolated Agent Ledger & Vault"]
+            AgentDB[("Agent PostgreSQL 16 (:5433)\n19 Tables + Immutable Triggers")]
+            AgentMinIO[("Agent MinIO Vault (:9002)\nPrivate Evidence & Report Buckets")]
+        end
+    end
+
+    subgraph ExternalSystems["External Services & Simulated Rails"]
+        NIM["NVIDIA NIM Cloud API\n(nvidia/nemotron-3.5-super-vl-120b-a12b\n+ Deterministic Fallback)"]
+        PayPal["PayPal REST API & Webhooks\n(Sandbox Default / Live)"]
+        CarrierSim["[Simulated / Mocked]\ncarrier_simulator (:8203)"]
+        IssuerSim["[Simulated / Mocked]\nissuer_simulator (:8201)"]
+        RegSim["[Simulated / Mocked]\nregulatory_simulator (:8202)"]
+    end
+
+    Customer --> CustomerUI
+    Merchant --> MerchantUI
+    Ops --> OpsUI
+
+    CustomerUI -->|User JWT| ShipkartAPI
+    CustomerUI -->|Shipkart User JWT| AgentAPI
+    MerchantUI -->|User JWT| ShipkartAPI
+    MerchantUI -->|Shipkart User JWT| AgentAPI
+    OpsUI -->|Isolated Platform Ops JWT| AgentAPI
+
+    ShipkartAPI <--> ShipkartDB
+    ShipkartAPI <--> ShipkartMinIO
+    ShipkartAPI -->|HMAC-SHA256 Return Webhook| AgentAPI
+    AgentAPI <-->|Service JWT Bridge & Sync| ShipkartAPI
+    ShipkartAPI -->|Merchant-Direct PayPal Payout| PayPal
+
+    AgentAPI --> LifecycleSvc
+    AgentAPI --> PolicyGate
+    AgentAPI --> DelayEta
+    AgentAPI --> Reconciler
+    AgentAPI --> Graph
+    AgentAPI --> CeleryW
+
+    Graph --> Intake --> Investigate --> Resolve
+    Intake -.->|Structured JSON + Vision| NIM
+    Investigate -.->|Structured JSON| NIM
+    Resolve -.->|Structured JSON| NIM
+    Investigate --> DelayEta
+    Investigate --> CarrierSim
+    Investigate --> IssuerSim
+    Investigate --> RegSim
+    Investigate -->|Read-Only Capture/Refund Poll| PayPal
+
+    Resolve -->|Proposes MERCHANT_REVIEW\nNever Executes Payout| LifecycleSvc
+    MerchantUI -->|Human REF-001 Approval| LifecycleSvc
+    PolicyGate -->|Global Client Fallback Only| PayPal
+    PayPal -->|Signed Webhook PAY-002| AgentAPI
+
+    CeleryW <--> RedisQ
+    CeleryW --> Reconciler
+    CeleryW --> DelayEta
+    CeleryW --> Graph
+
+    LifecycleSvc <--> AgentDB
+    PolicyGate <--> AgentDB
+    Reconciler <--> AgentDB
+    AgentAPI <--> AgentMinIO

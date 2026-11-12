@@ -1,0 +1,71 @@
+sequenceDiagram
+    autonumber
+    actor Customer
+    participant CUI as Customer UI (:3000)
+    participant API as Shipkart FastAPI (:8000)
+    participant DB as PostgreSQL / Ledger
+    participant MinIO as MinIO Storage
+    participant PayPal as PayPal Sandbox API
+    participant Agent as Refund Intelligence (:8100)
+    actor Merchant
+    participant MUI as Merchant Hub (:3001)
+
+    %% 1. Merchant-Direct PayPal Checkout
+    Customer->>CUI: Open Checkout Step 4
+    CUI->>API: GET /api/v1/payments/paypal/client-config
+    API->>DB: Load cart items, group by merchant_id, decrypt client_secret if needed
+    API-->>CUI: Per-merchant checkout groups (client_id, sandbox_usd_total, split flag)
+
+    Customer->>CUI: Click PayPal Smart Button
+    CUI->>API: POST /api/v1/payments/paypal/create-order
+    API->>DB: Lock Product rows (FOR UPDATE), check stock, create Order (PENDING_PAYMENT) + 15m InventoryReservation
+    API->>PayPal: POST /v2/checkout/orders (PayPal-Request-Id, merchant OAuth2 token)
+    PayPal-->>API: paypal_order_id
+    API->>DB: Persist paypal_order_id + Append ORDER_CREATED ledger row
+    API-->>CUI: { local_order_id, paypal_order_id }
+
+    Customer->>PayPal: Authorize USD payment in PayPal Popup
+    PayPal-->>CUI: onApprove({ orderID })
+    CUI->>API: POST /api/v1/payments/paypal/capture-order
+    API->>DB: Verify order.user_id & paypal_order_id binding
+    API->>PayPal: POST /v2/checkout/orders/{id}/capture
+    PayPal-->>API: COMPLETED + capture_id + exact USD amount
+    API->>DB: Verify USD match, convert InventoryReservation, deduct stock, Order PAID, CAPTURE_COMPLETED ledger
+    API->>MinIO: Store ReportLab PDF invoice (invoices bucket)
+    API-->>CUI: Order Confirmed -> Live Tracking
+
+    %% 2. Delivery & Return Request
+    Merchant->>MUI: Advance fulfillment to DELIVERED
+    MUI->>API: PATCH /api/v1/orders/{id}/status (DELIVERED)
+    Customer->>CUI: Upload defect evidence -> POST /api/v1/media/upload
+    CUI->>API: POST /api/v1/returns/ (reason, evidence_urls)
+    API->>DB: Compute proportional refund_paypal_amount, create ReturnRequest (REQUESTED)
+    API--)Agent: POST /api/v1/bridge/shipkart/return-event (HMAC-SHA256 RETURN_REQUESTED)
+
+    %% 3. External Agent Investigation & REF-001 Guard
+    Agent->>API: GET /api/v1/orders/{id}/bridge-context (Service JWT)
+    Agent->>API: GET /api/v1/orders/{id}/paypal-capture-status (Service JWT -> PayPal API)
+    Agent->>API: GET /api/v1/media/files/return-evidence/... (Service JWT)
+    Agent->>API: POST /api/v1/returns/{id}/agent-decision (Service JWT)
+    Note over API: REF-001 Guard blocks execute_paypal_refund=True;\nmoves Return REQUESTED -> UNDER_REVIEW only
+    API->>DB: Save agent_risk_score, agent_reasoning, AGENT_* timeline event
+
+    %% 4. Explicit Merchant Approval & Refund Execution
+    Merchant->>MUI: Inspect Return & AI Dossier, click Approve Refund
+    MUI->>API: POST /api/v1/returns/{id}/execute-approved-refund (approval_reference)
+    alt PayPal Order with Real Capture ID
+        API->>DB: Resolve owning merchant AES-256-GCM PayPal credentials
+        API->>PayPal: POST /v2/payments/captures/{capture_id}/refund (USD ceiling check)
+        PayPal-->>API: PayPal Refund ID & status
+    else Standard Checkout or CAP-SIM-* Capture
+        API->>API: Assign local SK-REF-* transaction ID (no PayPal call)
+    end
+    API->>DB: Update Return REFUNDED, Order payment_status, Allocation, PaymentLedgerEvent
+    API--)Agent: POST /api/v1/bridge/shipkart/return-event (RETURN_STATUS_UPDATED)
+
+    %% 5. Asynchronous PayPal Webhook Reconciliation
+    PayPal--)API: POST /api/v1/webhooks/paypal/{merchant_id}
+    API->>PayPal: Verify cert URL (*.paypal.com) & /v1/notifications/verify-webhook-signature
+    API->>DB: Allowlist check & deduplicate ProcessedWebhookEvent.event_id
+    API->>PayPal: Re-fetch authoritative /v2/payments/refunds/{refund_id}
+    API->>DB: Reconcile Return/Order status & append PaymentLedgerEvent

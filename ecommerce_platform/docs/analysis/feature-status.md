@@ -1,0 +1,52 @@
+# Feature Implementation Status — Platform 1 (`ecommerce_platform` / Shipkart)
+
+This matrix classifies every capability strictly from executable code, configuration, and tests inspected in `ecommerce_platform` (with read-only verification of external bridge endpoints in `refund_intelligence_platform`).
+
+Only the six permitted status labels are used:
+- `Implemented — verified`
+- `Implemented — not runtime-verified`
+- `Partially implemented`
+- `Simulated / mocked`
+- `Planned`
+- `Not found`
+
+> **Runtime verification scope:** Backend `python -m pytest -v` passed **15 of 16** tests (`tests/test_paypal_sandbox.py` 13/13 passed; `tests/test_api_e2e.py` 2/3 passed, `test_full_ecommerce_lifecycle` failed at line 77 with HTTP `400` on `/api/v1/cart/items` due to stock state in local `backend/data/ecommerce.db`). Customer and merchant `node --test src/motion/__tests__/math.test.mjs` (4/4 and 8/8) and `npm run build` Vite builds succeeded. Live PayPal Sandbox API calls, Docker Compose containers, PostgreSQL 16 runtime, MinIO S3 server, and end-to-end live `refund_intelligence_platform` connectivity were **Not run** in this evaluation.
+
+## Core Feature Status Matrix
+
+| Feature | Code Evidence | Status | Accurate README Wording |
+|---|---|---|---|
+| **Return tracking** | `backend/app/db/models.py` (`ReturnRequest`, `ReturnStatus`: `REQUESTED`..`REJECTED`), `backend/app/api/v1/endpoints/returns.py`, `backend/app/core/timeline.py` (`RETURN_STEP_SEQUENCE`), `customer_frontend/src/pages/Orders.jsx` | `Implemented — verified` | Implemented with 6-stage return timeline (`REQUESTED` to `REFUNDED` plus `REJECTED`), verified via backend tests (`test_agent_decision_and_merchant_product_crud`, `test_paypal_proportional_refunds_by_agent_and_merchant`). |
+| **Refund tracking** | `backend/app/api/v1/endpoints/returns.py` (`refund_transaction_id`, `refund_paypal_amount`, `execute_approved_refund`, `get_return_paypal_refund_status`), `models.py` (`PaymentLedgerEvent`, `MerchantOrderAllocation.refunded_usd`) | `Implemented — verified` | Tracks proportional `USD` / `INR` refund amounts, PayPal capture refund status queries, immutable ledger events, and allocation `refunded_usd` updates; tested with mocked PayPal HTTP clients. |
+| **Delay detection** | No SLA delay rules exist inside `ecommerce_platform`. `RefundIntelligencePanel.jsx` and `MerchantRefundIntelligencePanel.jsx` fetch delay/ETA evaluations externally from `VITE_AGENT_API_URL` (`refund_intelligence_platform`). | `Not found` *(delegated externally)* | Delay detection (`DELAY-001`..`DELAY-006`) is not implemented inside `ecommerce_platform`; the UI panels query `refund_intelligence_platform` (`:8100`) when available. |
+| **Evidence collection** | `backend/app/api/v1/endpoints/media.py` (`/media/upload`, `/media/files/{bucket}/{object_name}`), `core/minio_client.py`, `customer_frontend/src/components/ReturnModal.jsx`, `RefundIntelligencePanel.jsx` | `Partially implemented` | Shipkart uploads customer return photos (`evidence_urls`) to MinIO (`return-evidence` bucket) or `./data/minio_fallback` without content inspection; cryptographic SHA-256 verification and inspection reside externally in `refund_intelligence_platform`. |
+| **Customer updates** | `customer_frontend/src/pages/Orders.jsx` & `OrderTrack.jsx` (3-second HTTP polling), `RefundIntelligencePanel.jsx` (dossier/appeal/chat calls to `:8100`) | `Implemented — not runtime-verified` | Customer portals poll Shipkart endpoints every 3 seconds and read intelligence/chat updates from `refund_intelligence_platform`; no email/SMS push or WebSocket notifications exist inside Shipkart. |
+| **Merchant approval** | `backend/app/api/v1/endpoints/returns.py` (`PATCH /{id}/decision`, `POST /{id}/agent-decision` REF-001 guard, `POST /{id}/execute-approved-refund`), `merchant_frontend/src/pages/Returns.jsx` | `Implemented — verified` | Strict REF-001 guard blocks autonomous payouts on `/agent-decision` and requires explicit `approval_reference` via `/execute-approved-refund` or merchant `PATCH /decision`. |
+| **Escalation** | `backend/app/api/v1/endpoints/returns.py` (`AGENT_ESCALATED` timeline append on non-APPROVE/REJECT agent action); full escalation routing resides in `refund_intelligence_platform` | `Partially implemented` | Shipkart persists `AGENT_ESCALATED` timeline entries and `UNDER_REVIEW` state when notified by the external agent platform, while escalation scoring/queues live in `refund_intelligence_platform`. |
+| **PayPal integration** | `backend/app/services/paypal_service.py`, `endpoints/payments.py`, `endpoints/webhooks.py`, `endpoints/merchant_payments.py`, `customer_frontend/src/components/PayPalCheckoutButton.jsx` | `Implemented — verified` *(unit/mocked HTTP)* / `Partially implemented` *(live Sandbox not run)* | Order-first checkout, `PayPal-Request-Id` idempotency, ownership-verified capture, capture refunds, and 6-step webhooks pass mocked HTTP tests; live Sandbox HTTP calls were not executed here, and `CAP-SIM-`/`STANDARD_CHECKOUT` paths trigger local `SK-REF-*` fallbacks. |
+| **Simulated clock** | None in `ecommerce_platform`. Only `InventoryReservation.expires_at` checks `datetime.now(timezone.utc)` (`inventory_service.py`), plus simulated `SK-REF-*` / `CAP-SIM-*` local IDs. | `Not found` *(clock)* / `Simulated / mocked` *(Standard/`CAP-SIM-` payouts)* | No time-travel / simulated clock exists in Shipkart; `STANDARD_CHECKOUT` and `CAP-SIM-*` orders use simulated local `SK-REF-*` refund IDs without external payment rail calls. |
+| **India / US handling** | `models.py` (`Product.price`/`mrp` INR + `sandbox_usd_price` USD; `Order.original_currency="INR"` + `paypal_currency="USD"`), `products.py` (85 INR/USD auto-ratio fallback on product create) | `Implemented — verified` | Dual-column `INR` catalog display and explicit `USD` Sandbox settlement pricing avoids ad-hoc checkout FX math; no live FX rate feed or PayPal India cross-border eligibility API exists. |
+
+## Additional Shipkart Capabilities
+
+| Feature | Code Evidence | Status | Notes |
+|---|---|---|---|
+| **Authentication & Role RBAC** | `core/security.py` (`HS256` JWT, `bcrypt`, `customer` vs `merchant`, Service JWT), `endpoints/auth.py` | `Implemented — verified` | Verified in `tests/test_paypal_sandbox.py` and `tests/test_api_e2e.py`. |
+| **AES-256-GCM Merchant Credential Custody** | `core/crypto.py` (`AESGCM` + 96-bit nonce + AAD `merchant:{id}:paypal`), `endpoints/merchant_payments.py` | `Implemented — verified` | Verified in `test_aes256_gcm_roundtrip_and_redaction` and `test_merchant_paypal_credentials_encryption_masking_verify_and_clear`. |
+| **Split-Merchant Cart Checkout** | `endpoints/payments.py` (`GET /paypal/client-config`, `create-order` grouping), `customer_frontend/src/pages/Checkout.jsx` | `Implemented — verified` | Sequential per-merchant PayPal button mounting and selective cart item deletion verified in `test_merchant_isolation_split_checkout_and_selective_cart_clearing`. |
+| **Inventory Reservations & Locks** | `services/inventory_service.py` (`RESERVATION_TTL_MINUTES=15`, PostgreSQL `with_for_update()`), `CAPTURE_EXCEPTION_OUT_OF_STOCK` | `Implemented — verified` | Verified in `test_inventory_reservation_concurrency_expiry_and_capture_exception`; expiry sweep is lazy on reads (no background worker). |
+| **Immutable Financial Ledger** | `models.py` (`PaymentLedgerEvent` `before_update` & `before_delete` SQLAlchemy listeners) | `Implemented — verified` | Verified in `test_capture_ownership_decimal_exactness_idempotency_and_immutable_ledger`. |
+| **ReportLab PDF Tax Invoices** | `services/invoice_service.py`, `endpoints/invoices.py` | `Implemented — verified` | Generates PDFs stored in MinIO (`invoices` bucket) or local fallback `./data/minio_fallback`. |
+| **MinIO S3 Storage + Local Fallback** | `core/minio_client.py` | `Implemented — not runtime-verified` | Code handles live MinIO S3 + local filesystem fallback; live MinIO container was not started in this run. |
+| **CORS Origin Restriction** | `core/config.py` (`CORS_ORIGINS`), `main.py` (`settings.cors_origins_list`) | `Implemented — verified` | `CORSMiddleware` enforces `settings.cors_origins_list`; `render.yaml` explicitly configures Render frontend origins. |
+| **Operations Console Sidebar Link** | `merchant_frontend/.env.example` / `docker-compose.yml` (`VITE_OPS_CONSOLE_URL`) vs `SellerLayout.jsx` | `Planned` / `Not found` *(in UI source)* | `VITE_OPS_CONSOLE_URL` is wired into container builds and env files, but `merchant_frontend/src/` has no link or import referencing it. |
+| **In-Process AI / LangGraph Agents** | `ecommerce_platform` backend & frontends | `Not found` | Shipkart runs zero LLM/LangGraph agents internally; AI workflows execute externally in `refund_intelligence_platform` and integrate via HTTP bridge. |
+
+## Documentation Discrepancies Observed in Existing Files
+
+During Phase H verification against executable source code, the following discrepancies were identified in pre-existing files under `ecommerce_platform/`:
+1. `docs/AGENT_INTEGRATION_SPEC.md` documents `GET /api/v1/returns/pending`, autonomous refund execution via `POST /api/v1/returns/{id}/agent-decision` (`execute_paypal_refund: true`), and `"currency_code": "INR"`. Actual code uses `GET /api/v1/returns/bridge/pending`, enforces **REF-001** blocking autonomous payouts in `agent-decision`, requires `POST /api/v1/returns/{id}/execute-approved-refund`, and issues refunds in `order.paypal_currency` (`USD`).
+2. `docs/API_REFERENCE.md` omits all `/payments/paypal/*`, `/merchant/*`, `/webhooks/*`, `/auth/addresses`, `/products/{id}/claim`, and bridge endpoints.
+3. `docs/ARCHITECTURE.md` lists `payment_status = "SIMULATED_PAID"` for Phase 1 checkout; actual `POST /api/v1/orders/` sets `payment_method = "STANDARD_CHECKOUT"`, `payment_status = "CONFIRMED"`, and `settlement_status = "STANDARD_CONFIRMED"`.
+4. `docs/PAYPAL_SANDBOX_PAYMENT_PHASE.md` specifies ciphertext prefix `v1:<nonce>:<ciphertext+tag>`, whereas `core/crypto.py` stores URL-safe base64 `nonce (12B) + ciphertext + tag` without a `v1:` prefix; it also references `@paypal/react-paypal-js`, whereas `customer_frontend/package.json` does not depend on `@paypal/react-paypal-js` and `PayPalCheckoutButton.jsx` dynamically injects `<script src="https://www.paypal.com/sdk/js...">` directly.
+5. `README.md` (prior version, line 33) stated the Seller Hub sidebar contains a link to the Operations Console (`http://localhost:3002`); `SellerLayout.jsx` has no such link.

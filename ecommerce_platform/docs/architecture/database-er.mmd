@@ -1,0 +1,178 @@
+erDiagram
+    users ||--o{ addresses : "owns"
+    users ||--o{ products : "lists (merchant_id)"
+    users ||--o| merchant_payment_preferences : "configures"
+    users ||--o{ cart_items : "adds"
+    users ||--o{ orders : "places (user_id)"
+    users ||--o{ orders : "sells (merchant_id)"
+    users ||--o{ order_items : "sells (merchant_id)"
+    users ||--o{ return_requests : "submits (user_id)"
+    users ||--o{ return_requests : "reviews (merchant_id)"
+    users ||--o{ merchant_order_allocations : "receives (merchant_id)"
+    users ||--o{ payment_ledger_events : "scopes (merchant_id)"
+
+    products ||--o{ cart_items : "referenced_by"
+    products ||--o{ order_items : "ordered_as"
+    products ||--o{ return_requests : "returned_in"
+    products ||--o{ inventory_reservations : "reserved_by"
+
+    orders ||--|{ order_items : "contains"
+    orders ||--o{ return_requests : "has"
+    orders ||--o{ merchant_order_allocations : "allocates"
+    orders ||--o{ inventory_reservations : "locks"
+    orders ||--o{ payment_ledger_events : "records"
+
+    order_items ||--o{ return_requests : "subject_of"
+    return_requests ||--o{ payment_ledger_events : "logs_refund"
+
+    users {
+        int id PK
+        string email UK
+        string hashed_password
+        string full_name
+        enum role "customer | merchant"
+        string business_name
+        bool is_active
+        datetime created_at
+    }
+
+    addresses {
+        int id PK
+        int user_id FK
+        string full_name
+        string phone
+        string pincode
+        string locality
+        text street_address
+        string city
+        string state
+        bool is_default
+    }
+
+    products {
+        int id PK
+        int merchant_id FK "nullable (starter catalog)"
+        string title
+        string brand
+        string category
+        numeric price "INR (12,2)"
+        numeric mrp "INR (12,2)"
+        numeric sandbox_usd_price "USD (12,2)"
+        int stock
+        int return_window_days
+        bool is_active
+    }
+
+    cart_items {
+        int id PK
+        int user_id FK
+        int product_id FK
+        int quantity
+    }
+
+    orders {
+        int id PK
+        string order_number UK
+        int user_id FK
+        int merchant_id FK
+        numeric total_amount "INR (12,2)"
+        string original_currency "INR"
+        numeric paypal_amount "USD (12,2)"
+        string paypal_currency
+        string payment_method
+        string payment_status
+        string paypal_order_id
+        string paypal_capture_id
+        string payment_provider_mode "MERCHANT_DIRECT | PLATFORM_SANDBOX"
+        enum status "OrderStatus"
+        json tracking_history
+    }
+
+    order_items {
+        int id PK
+        int order_id FK
+        int product_id FK
+        int merchant_id FK
+        int quantity
+        numeric price "INR (12,2)"
+        numeric mrp "INR (12,2)"
+    }
+
+    return_requests {
+        int id PK
+        string return_number UK
+        int order_id FK
+        int order_item_id FK
+        int user_id FK
+        int merchant_id FK
+        int product_id FK
+        string reason
+        json evidence_urls
+        numeric refund_amount "INR (12,2)"
+        string refund_currency
+        numeric refund_paypal_amount "USD (12,2)"
+        enum status "ReturnStatus"
+        float agent_risk_score
+        text agent_reasoning
+        string refund_transaction_id
+        json tracking_history
+    }
+
+    merchant_payment_preferences {
+        int id PK
+        int merchant_id FK "unique"
+        string payout_paypal_email
+        numeric auto_refund_limit_usd "(12,2)"
+        int return_window_days
+        string paypal_environment "SANDBOX | LIVE"
+        string paypal_client_id
+        text encrypted_paypal_client_secret "AES-256-GCM"
+        string paypal_client_secret_last4
+        string paypal_webhook_id
+        datetime credential_verified_at
+    }
+
+    merchant_order_allocations {
+        int id PK
+        int order_id FK
+        int merchant_id FK
+        numeric gross_inr "(12,2)"
+        numeric gross_usd "(12,2)"
+        numeric platform_fee_usd "(12,2)"
+        numeric net_merchant_usd "(12,2)"
+        numeric refunded_usd "(12,2)"
+        string fulfillment_status
+        string settlement_status
+    }
+
+    inventory_reservations {
+        int id PK
+        int order_id FK
+        int product_id FK
+        int quantity
+        string status "ACTIVE | CONVERTED | EXPIRED | RELEASED"
+        datetime expires_at
+    }
+
+    payment_ledger_events {
+        int id PK
+        int order_id FK
+        int return_request_id FK
+        int merchant_id FK
+        string event_type "Append-only"
+        string paypal_order_id
+        string paypal_capture_id
+        string paypal_refund_id
+        numeric amount "(12,2)"
+        string currency
+        json redacted_payload
+    }
+
+    processed_webhook_events {
+        string event_id PK
+        string event_type
+        string transmission_id
+        string verification_status
+        json raw_redacted_payload
+        datetime processed_at
+    }

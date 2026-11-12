@@ -1,0 +1,258 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rip_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-refund_intelligence}
+      POSTGRES_USER: ${POSTGRES_USER:-refund_agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-refund_agent_dev_pass}
+    ports:
+      - "5433:5432"
+    volumes:
+      - agent_postgres_data:/var/lib/postgresql/data
+    networks:
+      - agent_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-refund_agent} -d ${POSTGRES_DB:-refund_intelligence}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: rip_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - agent_redis_data:/data
+    networks:
+      - agent_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    container_name: rip_minio
+    user: "0:0"
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    command: server /data --console-address ":9001"
+    volumes:
+      - agent_minio_data:/data
+    networks:
+      - agent_net
+
+  issuer_simulator:
+    build:
+      context: ./simulators/issuer_simulator
+      dockerfile: Dockerfile
+    container_name: rip_issuer_simulator
+    ports:
+      - "8201:8201"
+    networks:
+      - agent_net
+
+  regulatory_simulator:
+    build:
+      context: ./simulators/regulatory_simulator
+      dockerfile: Dockerfile
+    container_name: rip_regulatory_simulator
+    ports:
+      - "8202:8202"
+    networks:
+      - agent_net
+
+  carrier_simulator:
+    build:
+      context: ./simulators/carrier_simulator
+      dockerfile: Dockerfile
+    container_name: rip_carrier_simulator
+    ports:
+      - "8203:8203"
+    networks:
+      - agent_net
+
+  agent_backend:
+    build:
+      context: ./agent_backend
+      dockerfile: Dockerfile
+    container_name: rip_agent_backend
+    ports:
+      - "${AGENT_API_PORT:-8100}:8100"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      AGENT_API_PORT: 8100
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-refund_agent}:${POSTGRES_PASSWORD:-refund_agent_dev_pass}@postgres:5432/${POSTGRES_DB:-refund_intelligence}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9002}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_SECURE: "false"
+      BUCKET_EVIDENCE: ${BUCKET_EVIDENCE:-refund-evidence}
+      BUCKET_REPORTS: ${BUCKET_REPORTS:-refund-reports}
+      SHIPKART_API_URL: ${SHIPKART_DOCKER_API_URL:-http://host.docker.internal:8000}
+      BRIDGE_SHARED_SECRET: ${BRIDGE_SHARED_SECRET:-}
+      SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
+      PLATFORM_JWT_EXPIRE_MINUTES: ${PLATFORM_JWT_EXPIRE_MINUTES:-720}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NVIDIA_BASE_URL: ${NVIDIA_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      NVIDIA_REASONING_MODEL: ${NVIDIA_REASONING_MODEL:-nvidia/nemotron-3.5-super-vl-120b-a12b}
+      NVIDIA_VISION_MODEL: ${NVIDIA_VISION_MODEL:-nvidia/nemotron-3.5-super-vl-120b-a12b}
+      PAYPAL_ENV: ${PAYPAL_ENV:-SANDBOX}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      ISSUER_SIMULATOR_URL: http://issuer_simulator:8201
+      REGULATORY_SIMULATOR_URL: http://regulatory_simulator:8202
+      CARRIER_SIMULATOR_URL: http://carrier_simulator:8203
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001,http://localhost:3002,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3002}
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8100"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      issuer_simulator:
+        condition: service_started
+      regulatory_simulator:
+        condition: service_started
+      carrier_simulator:
+        condition: service_started
+    networks:
+      - agent_net
+
+  celery_worker:
+    build:
+      context: ./agent_backend
+      dockerfile: Dockerfile
+    container_name: rip_celery_worker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-refund_agent}:${POSTGRES_PASSWORD:-refund_agent_dev_pass}@postgres:5432/${POSTGRES_DB:-refund_intelligence}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9002}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_SECURE: "false"
+      BUCKET_EVIDENCE: ${BUCKET_EVIDENCE:-refund-evidence}
+      BUCKET_REPORTS: ${BUCKET_REPORTS:-refund-reports}
+      SHIPKART_API_URL: ${SHIPKART_DOCKER_API_URL:-http://host.docker.internal:8000}
+      BRIDGE_SHARED_SECRET: ${BRIDGE_SHARED_SECRET:-}
+      SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
+      PLATFORM_JWT_EXPIRE_MINUTES: ${PLATFORM_JWT_EXPIRE_MINUTES:-720}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NVIDIA_BASE_URL: ${NVIDIA_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      NVIDIA_REASONING_MODEL: ${NVIDIA_REASONING_MODEL:-nvidia/nemotron-3.5-super-vl-120b-a12b}
+      NVIDIA_VISION_MODEL: ${NVIDIA_VISION_MODEL:-nvidia/nemotron-3.5-super-vl-120b-a12b}
+      PAYPAL_ENV: ${PAYPAL_ENV:-SANDBOX}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      ISSUER_SIMULATOR_URL: http://issuer_simulator:8201
+      REGULATORY_SIMULATOR_URL: http://regulatory_simulator:8202
+      CARRIER_SIMULATOR_URL: http://carrier_simulator:8203
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      agent_backend:
+        condition: service_started
+    networks:
+      - agent_net
+
+  celery_beat:
+    build:
+      context: ./agent_backend
+      dockerfile: Dockerfile
+    container_name: rip_celery_beat
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-refund_agent}:${POSTGRES_PASSWORD:-refund_agent_dev_pass}@postgres:5432/${POSTGRES_DB:-refund_intelligence}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9002}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_SECURE: "false"
+      SHIPKART_API_URL: ${SHIPKART_DOCKER_API_URL:-http://host.docker.internal:8000}
+      BRIDGE_SHARED_SECRET: ${BRIDGE_SHARED_SECRET:-}
+      SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
+      PLATFORM_JWT_EXPIRE_MINUTES: ${PLATFORM_JWT_EXPIRE_MINUTES:-720}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NVIDIA_BASE_URL: ${NVIDIA_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      NVIDIA_REASONING_MODEL: ${NVIDIA_REASONING_MODEL:-nvidia/nemotron-3.5-super-vl-120b-a12b}
+      NVIDIA_VISION_MODEL: ${NVIDIA_VISION_MODEL:-nvidia/nemotron-3.5-super-vl-120b-a12b}
+      PAYPAL_ENV: ${PAYPAL_ENV:-SANDBOX}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      ISSUER_SIMULATOR_URL: http://issuer_simulator:8201
+      REGULATORY_SIMULATOR_URL: http://regulatory_simulator:8202
+      CARRIER_SIMULATOR_URL: http://carrier_simulator:8203
+    command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      agent_backend:
+        condition: service_started
+    networks:
+      - agent_net
+
+  ops_frontend:
+    build:
+      context: ./ops_frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_AGENT_API_URL: ${VITE_AGENT_API_URL:-http://localhost:8100}
+    container_name: rip_ops_frontend
+    ports:
+      - "${OPS_FRONTEND_PORT:-3002}:3002"
+    depends_on:
+      - agent_backend
+    networks:
+      - agent_net
+
+networks:
+  agent_net:
+    driver: bridge
+
+volumes:
+  agent_postgres_data:
+  agent_redis_data:
+  agent_minio_data:

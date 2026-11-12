@@ -1,0 +1,107 @@
+databases:
+  - name: refund-agent-db
+    databaseName: refund_intelligence
+    user: refund_agent
+    plan: free
+    region: oregon
+
+services:
+  - type: web
+    name: refund-issuer-sim-26
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./refund_intelligence_platform/simulators/issuer_simulator/Dockerfile
+    dockerContext: ./refund_intelligence_platform/simulators/issuer_simulator
+    healthCheckPath: /health
+
+  - type: web
+    name: refund-regulatory-sim-26
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./refund_intelligence_platform/simulators/regulatory_simulator/Dockerfile
+    dockerContext: ./refund_intelligence_platform/simulators/regulatory_simulator
+    healthCheckPath: /health
+
+  - type: web
+    name: refund-carrier-sim-26
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./refund_intelligence_platform/simulators/carrier_simulator/Dockerfile
+    dockerContext: ./refund_intelligence_platform/simulators/carrier_simulator
+    healthCheckPath: /health
+
+  - type: web
+    name: refund-agent-api-26
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./refund_intelligence_platform/agent_backend/Dockerfile
+    dockerContext: ./refund_intelligence_platform/agent_backend
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: refund-agent-db
+          property: connectionString
+      - key: CELERY_TASK_ALWAYS_EAGER
+        value: "true"
+      - key: REDIS_URL
+        value: ""
+      - key: MINIO_ENDPOINT
+        sync: false
+      - key: MINIO_PUBLIC_URL
+        sync: false
+      - key: MINIO_ACCESS_KEY
+        sync: false
+      - key: MINIO_SECRET_KEY
+        sync: false
+      - key: MINIO_SECURE
+        value: "true"
+      - key: SHIPKART_API_URL
+        sync: false
+      - key: BRIDGE_SHARED_SECRET
+        sync: false
+      - key: SERVICE_JWT_SECRET
+        sync: false
+      - key: SERVICE_JWT_ISSUER
+        value: refund-intelligence-platform
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: PLATFORM_ADMIN_EMAIL
+        sync: false
+      - key: PLATFORM_ADMIN_PASSWORD
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: PAYPAL_ENV
+        value: SANDBOX
+      - key: ISSUER_SIMULATOR_URL
+        value: https://refund-issuer-sim-26.onrender.com
+      - key: REGULATORY_SIMULATOR_URL
+        value: https://refund-regulatory-sim-26.onrender.com
+      - key: CARRIER_SIMULATOR_URL
+        value: https://refund-carrier-sim-26.onrender.com
+      - key: CORS_ORIGINS
+        value: https://shipkart-customer-26.onrender.com,https://shipkart-merchant-26.onrender.com,https://refund-ops-26.onrender.com
+
+  - type: web
+    name: refund-ops-26
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./refund_intelligence_platform/ops_frontend/Dockerfile
+    dockerContext: ./refund_intelligence_platform/ops_frontend
+    envVars:
+      - key: VITE_AGENT_API_URL
+        value: https://refund-agent-api-26.onrender.com

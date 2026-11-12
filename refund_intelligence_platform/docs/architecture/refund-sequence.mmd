@@ -1,0 +1,52 @@
+sequenceDiagram
+    autonumber
+    actor Customer
+    actor Merchant
+    participant Shipkart as Shipkart (ecommerce_platform :8000)
+    participant API as Agent Backend (:8100)
+    participant DB as Agent PostgreSQL (:5433)
+    participant MinIO as Agent MinIO (:9002)
+    participant Agents as LangGraph 3-Agent Pipeline
+    participant CarrierSim as Carrier Simulator (:8203) [Simulated]
+    participant PayPal as PayPal REST API / Webhooks
+    participant IssuerSim as Issuer Simulator (:8201) [Simulated]
+
+    Customer->>Shipkart: Request item return + reason/comments
+    Shipkart->>API: POST /api/v1/bridge/shipkart/return-event (X-Bridge-Signature HMAC)
+    API->>DB: Create ReturnCase + RefundCase (INVESTIGATING) + initial ETA
+    API-->>Shipkart: 201 Created (return_case_id, refund_case_id)
+
+    Customer->>API: POST /api/v1/returns/{id}/evidence (image/PDF + User JWT)
+    API->>MinIO: Validate magic bytes & SHA-256, store privately
+    API->>DB: Persist Evidence + RefundTimelineEvent
+
+    API->>Agents: Trigger POST /api/v1/agents/resolve/{case_id} (or Celery async)
+    Agents->>Agents: intake_node: fence untrusted text, check duplicates & injection
+    Agents->>CarrierSim: investigation_node: query reverse shipment status [Simulated]
+    Agents->>DB: Run deterministic DelayService (DELAY-001..006) & ETAService
+    Agents->>DB: resolution_node: persist AgentDecision (PROPOSED, requires_approval=true)
+    API->>Shipkart: POST /returns/{id}/agent-decision (Service JWT, execute_paypal_refund=false)
+
+    Merchant->>API: POST /api/v1/merchant/refunds/{id}/approve (Human Gate REF-001)
+    API->>DB: Insert immutable RefundApproval (APPROVED) + update ETA
+
+    alt Merchant-Direct Bridge Mode (Shipkart Merchant Credentials)
+        Merchant->>Shipkart: Execute approved refund with approval_reference
+        Shipkart->>PayPal: POST /v2/payments/captures/{id}/refund (merchant creds)
+        Shipkart->>API: HMAC RETURN_STATUS_UPDATED (REFUND_INITIATED / REFUNDED)
+    else Global Platform PayPal Mode
+        Merchant->>API: POST /api/v1/payments/paypal/refund (idempotency_key)
+        API->>DB: Assert REF-001..REF-004 + SELECT FOR UPDATE
+        API->>PayPal: POST /v2/payments/captures/{id}/refund
+        API->>DB: Persist RefundTransaction (PENDING or COMPLETED)
+    end
+
+    PayPal-->>API: POST /api/v1/webhooks/paypal (PAYMENT.CAPTURE.REFUNDED)
+    API->>DB: Deduplicate ProcessedWebhookEvent (PAY-002), set status=PAYPAL_COMPLETED
+
+    Note over API,IssuerSim: DELAY-006 Guard: PayPal COMPLETED != Bank Credit Posted
+    Agents->>IssuerSim: Open/poll simulated issuer inquiry [Simulated]
+    IssuerSim-->>API: DELAYED_POSTING (credit_posted=false)
+    API->>DB: Keep bank_confirmed=false; schedule RefundFollowup; sanitize customer wording
+    IssuerSim-->>API: Advance to CREDIT_POSTED [Simulated]
+    API->>DB: Transition RefundCase -> CONFIRMED_POSTED + ETA status=COMPLETED

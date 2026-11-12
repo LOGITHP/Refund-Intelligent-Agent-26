@@ -1,0 +1,38 @@
+flowchart TB
+    subgraph DockerCompose["Local Docker Compose Stack (docker-compose.yml)"]
+        DC_Cust["sk_customer_ui<br/>nginx:alpine (Port 3000)<br/>VITE_API_URL, VITE_AGENT_API_URL"]
+        DC_Merch["sk_merchant_ui<br/>nginx:alpine (Port 3001)<br/>VITE_API_URL, VITE_AGENT_API_URL, VITE_OPS_CONSOLE_URL"]
+        DC_API["sk_backend<br/>python:3.12-slim + uvicorn (Port 8000)<br/>extra_hosts: host.docker.internal:host-gateway"]
+        DC_PG[("sk_postgres<br/>postgres:16-alpine (Port 5432)<br/>Volume: postgres_data")]
+        DC_MinIO[("sk_minio<br/>chainguard/minio (Ports 9000/9001)<br/>Volume: minio_data")]
+        DC_BData[("Volume: backend_data<br/>/app/data (fallback storage)")]
+
+        DC_Cust -->|HTTP /api/v1| DC_API
+        DC_Merch -->|HTTP /api/v1| DC_API
+        DC_API -->|"psycopg (healthy)"| DC_PG
+        DC_API -->|"S3 API (minio:9000)"| DC_MinIO
+        DC_API --> DC_BData
+    end
+
+    subgraph RenderBlueprint["Render Cloud Blueprint (render.yaml — Repo Root Context)"]
+        R_Cust["shipkart-customer-26<br/>Docker Web Service (oregon, free)"]
+        R_Merch["shipkart-merchant-26<br/>Docker Web Service (oregon, free)"]
+        R_API["shipkart-api-26<br/>Docker Web Service (oregon, free)<br/>Health: /health"]
+        R_DB[("shipkart-db<br/>Render PostgreSQL (free)")]
+
+        R_Cust --> R_API
+        R_Merch --> R_API
+        R_API --> R_DB
+    end
+
+    subgraph ExternalRuntime["External Services & Companion Stack"]
+        HostAgent["Refund Intelligence Core<br/>Local: host.docker.internal:8100<br/>Render: refund-agent-api-26.onrender.com"]
+        ExtPayPal["PayPal REST & Webhook Endpoints<br/>api-m.sandbox.paypal.com / api-m.paypal.com"]
+        ExtMinIO["External S3 / MinIO Endpoint<br/>(Render MINIO_ENDPOINT + MINIO_SECURE=true)"]
+    end
+
+    DC_API <-->|"HMAC / Service JWT"| HostAgent
+    DC_API <-->|"OAuth2 / Orders / Refunds"| ExtPayPal
+    R_API <-->|"HMAC / Service JWT"| HostAgent
+    R_API <-->|"OAuth2 / Orders / Refunds"| ExtPayPal
+    R_API <-->|"S3 HTTPS"| ExtMinIO

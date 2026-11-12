@@ -1,0 +1,22 @@
+Good morning everyone.
+
+I am LOGITH P, and today I am presenting our project, Agentic Refund Intelligence and Resolution Platform.
+
+Let me start with a real-world experience.
+
+A few years ago, when I ordered a laptop online, I experienced the difficulties associated with the refund process. Getting a refund was not as simple as returning a product. There were delays, uncertainty, and a lack of clear information about where the money was and when I would receive it.
+
+This made me think: Why should customers struggle to get their own money back after a valid return?
+
+The actual problem is that the refund process involves multiple parties, including customers, merchants, payment gateways, banks, and sometimes regulatory authorities. A delay at any stage can leave customers without proper updates or resolution.
+
+Our purpose is to make this entire process transparent, traceable, and intelligent.
+
+Introducing our solution: Agentic Refund Intelligence Platform.
+
+Instead of simply displaying refund status, our platform uses AI agents to actively monitor the entire refund lifecycle, identify the reason for delays, collect supporting evidence, communicate with customers, and escalate unresolved cases to the appropriate authority.
+
+What makes us different is that we don't just track refunds; we identify why refunds are stuck and take action to move them towards resolution, with human approval wherever required.
+
+Our goal is simple: Make every refund accountable, transparent, and faster.
+

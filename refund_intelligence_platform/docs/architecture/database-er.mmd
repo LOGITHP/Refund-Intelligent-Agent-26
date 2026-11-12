@@ -1,0 +1,173 @@
+erDiagram
+    return_cases ||--o{ return_case_items : "contains"
+    return_cases ||--o{ return_shipments : "tracked_by"
+    return_cases ||--o{ return_inspections : "inspected_in"
+    return_cases ||--o{ refund_cases : "linked_to"
+    return_cases ||--o{ evidence : "has_evidence"
+    return_cases ||--o{ refund_timeline_events : "logs_physical"
+
+    refund_cases ||--o{ refund_transactions : "settled_by"
+    refund_cases ||--o{ refund_approvals : "governed_by_immutable"
+    refund_cases ||--o{ evidence : "has_evidence"
+    refund_cases ||--o{ refund_timeline_events : "logs_financial"
+    refund_cases ||--o{ refund_eta_estimates : "estimated_by"
+    refund_cases ||--o{ refund_followups : "polled_by"
+    refund_cases ||--o{ issuer_inquiries : "investigated_at_issuer"
+    refund_cases ||--o{ regulatory_evaluations : "checked_against"
+    refund_cases ||--o{ compliance_violations : "flags"
+
+    agent_executions ||--o{ agent_decisions : "proposes"
+
+    return_cases {
+        uuid id PK
+        int shipkart_return_id UK
+        int shipkart_order_id
+        int shipkart_customer_id
+        int shipkart_merchant_id
+        string status
+        string reason_code
+    }
+    return_case_items {
+        uuid id PK
+        uuid return_case_id FK
+        int shipkart_order_item_id
+        int quantity_requested
+        int quantity_approved
+        numeric refund_amount_requested
+    }
+    return_shipments {
+        uuid id PK
+        uuid return_case_id FK
+        string carrier_name
+        string tracking_number
+        string status
+        boolean is_simulated
+    }
+    return_inspections {
+        uuid id PK
+        uuid return_case_id FK
+        int shipkart_inspector_id
+        string inspection_status
+        string condition_result
+    }
+    refund_cases {
+        uuid id PK
+        uuid return_case_id FK
+        int shipkart_return_id
+        int shipkart_order_id
+        string status
+        numeric requested_amount
+        numeric approved_amount
+        numeric captured_amount
+        char original_currency
+        char paypal_currency
+        string paypal_capture_id
+    }
+    refund_transactions {
+        uuid id PK
+        uuid refund_case_id FK
+        string paypal_capture_id
+        string paypal_refund_id UK
+        string idempotency_key UK
+        numeric amount
+        char currency
+        string status
+    }
+    refund_approvals {
+        uuid id PK "IMMUTABLE"
+        uuid refund_case_id FK
+        int shipkart_merchant_user_id
+        string decision
+        numeric approved_amount
+        string approval_reference
+    }
+    evidence {
+        uuid id PK
+        uuid return_case_id FK
+        uuid refund_case_id FK
+        string storage_key
+        string sha256_hash
+        string verification_status
+    }
+    refund_timeline_events {
+        uuid id PK
+        uuid return_case_id FK
+        uuid refund_case_id FK
+        string event_type
+        string source_type
+        boolean verified
+    }
+    agent_executions {
+        uuid id PK
+        uuid case_id "RefundCase or ReturnCase UUID"
+        string agent_name
+        string model_name
+        string status
+    }
+    agent_decisions {
+        uuid id PK
+        uuid execution_id FK
+        string decision_type
+        numeric confidence
+        boolean requires_approval
+        string decision_status
+    }
+    refund_eta_estimates {
+        uuid id PK
+        uuid refund_case_id FK
+        string eta_status
+        datetime earliest_at
+        datetime latest_at
+        boolean is_current
+    }
+    refund_followups {
+        uuid id PK
+        uuid refund_case_id FK
+        string target_type
+        string status
+        int attempt_count
+    }
+    issuer_inquiries {
+        uuid id PK
+        uuid refund_case_id FK
+        string provider_type
+        string status
+        boolean is_simulated
+    }
+    regulatory_evaluations {
+        uuid id PK
+        uuid refund_case_id FK
+        char jurisdiction
+        string evaluation_status
+        string rule_version
+        boolean is_simulated
+    }
+    compliance_violations {
+        uuid id PK
+        uuid refund_case_id FK
+        string rule_code
+        string severity
+        string status
+    }
+    audit_logs {
+        uuid id PK "IMMUTABLE"
+        uuid actor_id
+        int shipkart_actor_id
+        string action
+        string resource_type
+        uuid resource_id
+    }
+    processed_webhook_events {
+        uuid id PK
+        string provider
+        string provider_event_id
+        string event_type
+        string processing_status
+    }
+    platform_users {
+        uuid id PK
+        string email UK
+        string password_hash
+        string role
+        boolean is_active
+    }

@@ -1,0 +1,38 @@
+stateDiagram-v2
+    [*] --> RETURN_REQUESTED : Customer return created or Shipkart HMAC event
+
+    state "Track 1: Physical Return & Simulated Carrier" as Physical {
+        RETURN_REQUESTED --> RETURN_APPROVED : Merchant approves return
+        RETURN_REQUESTED --> RETURN_REJECTED : Merchant rejects (CASE-001 reason >=3 chars)
+        RETURN_APPROVED --> PICKUP_SCHEDULED : Reverse pickup booked (DELAY-001 >48h SLA)
+        PICKUP_SCHEDULED --> RETURN_REJECTED : Cancelled before pickup
+        PICKUP_SCHEDULED --> PICKED_UP : [Simulated Carrier] Pickup scan
+        PICKED_UP --> IN_TRANSIT : [Simulated Carrier] Transit scan (DELAY-002 >72h SLA)
+        IN_TRANSIT --> DELIVERED_TO_MERCHANT : [Simulated Carrier] Delivered
+        DELIVERED_TO_MERCHANT --> PRODUCT_RECEIVED : Merchant confirms receipt
+        DELIVERED_TO_MERCHANT --> INSPECTION_PENDING : Queued for inspection (DELAY-003 >48h SLA)
+        PRODUCT_RECEIVED --> INSPECTION_PENDING : Queued for inspection
+        INSPECTION_PENDING --> INSPECTION_COMPLETED : Warehouse inspection recorded (STATE-002)
+        INSPECTION_COMPLETED --> REFUND_ELIGIBILITY_DECISION : Eligible for financial decision
+    }
+
+    state "Track 2: Financial Refund, Human Approval & Simulated Issuer" as Financial {
+        [*] --> INVESTIGATING : Paired RefundCase opened
+        INVESTIGATING --> MERCHANT_APPROVAL_PENDING : Inspection passed / Shipkart APPROVED / Agent proposal (DELAY-004 >48h SLA)
+        MERCHANT_APPROVAL_PENDING --> APPROVED_BY_MERCHANT : Human Merchant Approval (RefundApproval=APPROVED, REF-001)
+        MERCHANT_APPROVAL_PENDING --> REJECTED_BY_MERCHANT : Human Merchant Reject (CASE-001)
+        INVESTIGATING --> REJECTED_BY_MERCHANT : Human Merchant Reject (CASE-001)
+
+        APPROVED_BY_MERCHANT --> REFUND_SUBMITTED : Idempotent PayPal refund submitted (REF-002..004)
+        REFUND_SUBMITTED --> PAYPAL_PENDING : Provider returns PENDING (DELAY-005 >24h SLA)
+        PAYPAL_PENDING --> PAYPAL_COMPLETED : PayPal webhook/poll COMPLETED (Bank still unconfirmed)
+        APPROVED_BY_MERCHANT --> REFUND_COMPLETED : Synchronous PayPal COMPLETED (Bank still unconfirmed)
+        REFUND_SUBMITTED --> REFUND_FAILED : PayPal FAILED / DENIED / CANCELLED
+        PAYPAL_PENDING --> REVERSED : PayPal REVERSED
+
+        PAYPAL_COMPLETED --> CONFIRMED_POSTED : [Simulated Issuer] CREDIT_POSTED / POSTED_TO_REPLACEMENT_CARD
+        REFUND_COMPLETED --> CONFIRMED_POSTED : [Simulated Issuer] CREDIT_POSTED (DELAY-006 cleared)
+        INVESTIGATING --> APPEAL_UNDER_REVIEW : Customer submits appeal
+        MERCHANT_APPROVAL_PENDING --> APPEAL_UNDER_REVIEW : Customer submits appeal
+        REJECTED_BY_MERCHANT --> APPEAL_UNDER_REVIEW : Customer submits appeal
+    }

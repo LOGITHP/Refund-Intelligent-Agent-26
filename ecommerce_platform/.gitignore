@@ -1,0 +1,29 @@
+# Legacy internal docs kept locally; expose architecture & analysis deliverables linked from README
+docs/*
+!docs/architecture/
+!docs/analysis/
+
+# Python & Backend
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+*.db
+*.sqlite
+*.sqlite3
+backend/data/
+.env
+
+# Node & Frontends
+node_modules/
+dist/
+dist-ssr/
+*.local
+.DS_Store
+Thumbs.db
+

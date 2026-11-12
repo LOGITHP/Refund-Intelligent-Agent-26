@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ease-apple-decel: cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-apple-smooth: cubic-bezier(0.25, 0.1, 0.3, 1);
+  --ease-apple-sym: cubic-bezier(0.4, 0, 0.6, 1);
+  --ease-apple-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@layer base {
+  body {
+    background-color: #f4f6f9;
+    color: #212121;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  }
+}
+
+.tabular-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes apple-fade-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes apple-panel-scale-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.apple-anim-fade {
+  animation: apple-fade-in 260ms var(--ease-apple-smooth) forwards;
+}
+
+.apple-panel-enter {
+  animation: apple-panel-scale-in 260ms var(--ease-apple-decel) forwards;
+}
+
+.apple-card-hover {
+  transition:
+    transform 240ms var(--ease-apple-decel),
+    box-shadow 240ms var(--ease-apple-decel),
+    border-color 240ms var(--ease-apple-decel);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .apple-anim-fade,
+  .apple-panel-enter,
+  .apple-card-hover {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}
