@@ -4,6 +4,28 @@
 
 ---
 
+## Live Cloud Deployment & Reviewer Access
+
+The live cloud deployment connects the **Refund Operations Console** (`refund_intelligence_platform`) with the companion **Shipkart** portals (`ecommerce_platform`) on Render.
+
+### Public Live URLs (Render Free Tier)
+
+- **Refund Operations Console (`refund-ops-26`, this platform):** https://refund-ops-26.onrender.com/
+- **Shipkart Customer Storefront (`shipkart-customer-26`, companion):** https://shipkart-customer-26.onrender.com/
+- **Shipkart Merchant Seller Hub (`shipkart-merchant-26`, companion):** https://shipkart-merchant-26.onrender.com/
+
+> **Render Free Tier Cold-Start Note:** All services are hosted on the **Render Free Tier** and automatically spin down to sleep after inactivity (~15 min). On first load after idle, allow **30–60+ seconds** for the backend/frontend instances to wake up before retrying or refreshing.
+
+### Reviewer Demo Accounts
+
+- **Operations Console Account (`refund-ops-26`):** Email `ops@shipkart.com` / Password `ops@shipkart.com`
+- **Customer Account (`shipkart-customer-26`):** Email `logith@gmail.com` / Password `logith@gmail.com`
+- **Seller / Merchant Account (`shipkart-merchant-26`):** Email `nava@gmail.com` / Password `nava@gmail.com`
+
+> **Account Registration Note:** Reviewers can also register new **Customer** and **Seller (Merchant)** accounts freely from the storefront / Seller Hub signup screens, whereas **Operations (`ops`) accounts are restricted/admin-managed** (public self-registration is disabled for `refund-ops-26`; use `ops@shipkart.com`).
+
+---
+
 ## 1. Overview
 
 The **Agentic Refund Intelligence & Resolution Platform** (`refund_intelligence_platform`) is a standalone containerized companion platform that extends the existing **Shipkart** (`ecommerce_platform`) marketplace application without replacing Shipkart's database, product catalog, order engine, or per-merchant PayPal credential isolation.

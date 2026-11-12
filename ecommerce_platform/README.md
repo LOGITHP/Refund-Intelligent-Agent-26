@@ -6,6 +6,7 @@
 
 ## Contents
 
+- [Live Cloud Deployment & Reviewer Access](#live-cloud-deployment--reviewer-access)
 - [Overview](#overview)
 - [Problem Statement](#problem-statement)
 - [Motivation and Real-World Context](#motivation-and-real-world-context)
@@ -36,6 +37,28 @@
 - [Troubleshooting](#troubleshooting)
 - [Future Scope](#future-scope)
 - [License](#license)
+
+---
+
+## Live Cloud Deployment & Reviewer Access
+
+The live cloud deployment hosts both **Shipkart** portals (`ecommerce_platform`) and connects them to the companion **Refund Operations Console** (`refund_intelligence_platform`) on Render.
+
+### Public Live URLs (Render Free Tier)
+
+- **Shipkart Customer Storefront (`shipkart-customer-26`, this platform):** https://shipkart-customer-26.onrender.com/
+- **Shipkart Merchant Seller Hub (`shipkart-merchant-26`, this platform):** https://shipkart-merchant-26.onrender.com/
+- **Refund Operations Console (`refund-ops-26`, companion):** https://refund-ops-26.onrender.com/
+
+> **Render Free Tier Cold-Start Note:** All services are hosted on the **Render Free Tier** and automatically spin down to sleep after inactivity (~15 min). On first load after idle, allow **30–60+ seconds** for the backend/frontend instances to wake up before retrying or refreshing.
+
+### Reviewer Demo Accounts
+
+- **Customer Account (`shipkart-customer-26`):** Email `logith@gmail.com` / Password `logith@gmail.com`
+- **Seller / Merchant Account (`shipkart-merchant-26`):** Email `nava@gmail.com` / Password `nava@gmail.com`
+- **Operations Console Account (`refund-ops-26`):** Email `ops@shipkart.com` / Password `ops@shipkart.com`
+
+> **Account Registration Note:** Reviewers can also register new **Customer** and **Seller (Merchant)** accounts freely from the storefront / Seller Hub signup screens, whereas **Operations (`ops`) accounts are restricted/admin-managed** (public self-registration is disabled for `refund-ops-26`; use `ops@shipkart.com`).
 
 ---
 

@@ -10,35 +10,62 @@
 
 ## Contents
 
-1. [Overview](#overview)
-2. [Problem Statement](#problem-statement)
-3. [Motivation and Real-World Context](#motivation-and-real-world-context)
-4. [Goals and Non-Goals](#goals-and-non-goals)
-5. [Proposed Solution](#proposed-solution)
-6. [Verified Feature Matrix](#verified-feature-matrix)
-7. [End-to-End Cross-Platform Workflow](#end-to-end-cross-platform-workflow)
-8. [Combined System Architecture Diagram](#combined-system-architecture-diagram)
-9. [Backend Architecture Diagram](#backend-architecture-diagram)
-10. [Agent Architecture Diagram](#agent-architecture-diagram)
-11. [Refund Lifecycle Diagram](#refund-lifecycle-diagram)
-12. [End-to-End Sequence Diagram](#end-to-end-sequence-diagram)
-13. [Database ER and Cross-Platform Data Model Diagram](#database-er-and-cross-platform-data-model-diagram)
-14. [Deployment Diagram (Docker Compose and Dual Render Blueprints)](#deployment-diagram-docker-compose-and-dual-render-blueprints)
-15. [Agent Responsibilities and Decision Boundaries](#agent-responsibilities-and-decision-boundaries)
-16. [Technology Stack with Verified Versions](#technology-stack-with-verified-versions)
-17. [Repository Structure](#repository-structure)
-18. [API Surface Overview](#api-surface-overview)
-19. [Database Ownership and Cross-Platform Linkage](#database-ownership-and-cross-platform-linkage)
-20. [PayPal Integration Architecture and Limitations](#paypal-integration-architecture-and-limitations)
-21. [Configuration and Environment Variables](#configuration-and-environment-variables)
-22. [Installation and Local Setup](#installation-and-local-setup)
-23. [Run Instructions (Docker Compose, Local, and Render Blueprints)](#run-instructions-docker-compose-local-and-render-blueprints)
-24. [Test, Lint, and Build Verification](#test-lint-and-build-verification)
-25. [Security and Privacy Controls](#security-and-privacy-controls)
-26. [Constraints, Assumptions, and Limitations](#constraints-assumptions-and-limitations)
-27. [Troubleshooting](#troubleshooting)
-28. [Future Scope](#future-scope)
-29. [License](#license)
+1. [Live Cloud Deployment & Reviewer Access](#live-cloud-deployment--reviewer-access)
+2. [Overview](#overview)
+3. [Problem Statement](#problem-statement)
+4. [Motivation and Real-World Context](#motivation-and-real-world-context)
+5. [Goals and Non-Goals](#goals-and-non-goals)
+6. [Proposed Solution](#proposed-solution)
+7. [Verified Feature Matrix](#verified-feature-matrix)
+8. [End-to-End Cross-Platform Workflow](#end-to-end-cross-platform-workflow)
+9. [Combined System Architecture Diagram](#combined-system-architecture-diagram)
+10. [Backend Architecture Diagram](#backend-architecture-diagram)
+11. [Agent Architecture Diagram](#agent-architecture-diagram)
+12. [Refund Lifecycle Diagram](#refund-lifecycle-diagram)
+13. [End-to-End Sequence Diagram](#end-to-end-sequence-diagram)
+14. [Database ER and Cross-Platform Data Model Diagram](#database-er-and-cross-platform-data-model-diagram)
+15. [Deployment Diagram (Docker Compose and Dual Render Blueprints)](#deployment-diagram-docker-compose-and-dual-render-blueprints)
+16. [Agent Responsibilities and Decision Boundaries](#agent-responsibilities-and-decision-boundaries)
+17. [Technology Stack with Verified Versions](#technology-stack-with-verified-versions)
+18. [Repository Structure](#repository-structure)
+19. [API Surface Overview](#api-surface-overview)
+20. [Database Ownership and Cross-Platform Linkage](#database-ownership-and-cross-platform-linkage)
+21. [PayPal Integration Architecture and Limitations](#paypal-integration-architecture-and-limitations)
+22. [Configuration and Environment Variables](#configuration-and-environment-variables)
+23. [Installation and Local Setup](#installation-and-local-setup)
+24. [Run Instructions (Docker Compose, Local, and Render Blueprints)](#run-instructions-docker-compose-local-and-render-blueprints)
+25. [Test, Lint, and Build Verification](#test-lint-and-build-verification)
+26. [Security and Privacy Controls](#security-and-privacy-controls)
+27. [Constraints, Assumptions, and Limitations](#constraints-assumptions-and-limitations)
+28. [Troubleshooting](#troubleshooting)
+29. [Future Scope](#future-scope)
+30. [License](#license)
+
+---
+
+## Live Cloud Deployment & Reviewer Access
+
+All user-facing portals for both platforms are live on Render and wired together across the dual-Blueprint deployment.
+
+### Public Live URLs (Render Free Tier)
+
+| Portal | Service Name | Live URL | Platform |
+|---|---|---|---|
+| **Shipkart Customer Storefront** | `shipkart-customer-26` | https://shipkart-customer-26.onrender.com/ | `ecommerce_platform` |
+| **Shipkart Merchant Seller Hub** | `shipkart-merchant-26` | https://shipkart-merchant-26.onrender.com/ | `ecommerce_platform` |
+| **Refund Operations Console** | `refund-ops-26` | https://refund-ops-26.onrender.com/ | `refund_intelligence_platform` |
+
+> **Render Free Tier Cold-Start Note:** All services are hosted on the **Render Free Tier** and automatically spin down to sleep after inactivity (~15 min). On first load after idle, please allow **30–60+ seconds** for the backend and frontend instances to wake up before retrying or refreshing.
+
+### Reviewer Demo Accounts
+
+| Role / Portal | Service | Email | Password |
+|---|---|---|---|
+| **Customer Account** | `shipkart-customer-26` | `logith@gmail.com` | `logith@gmail.com` |
+| **Seller / Merchant Account** | `shipkart-merchant-26` | `nava@gmail.com` | `nava@gmail.com` |
+| **Operations Console Account** | `refund-ops-26` | `ops@shipkart.com` | `ops@shipkart.com` |
+
+> **Account Registration Note:** Reviewers can also register new **Customer** and **Seller (Merchant)** accounts freely from the Shipkart Customer Storefront (`shipkart-customer-26`) and Merchant Seller Hub (`shipkart-merchant-26`) signup screens. **Operations (`ops`) accounts are restricted/admin-managed**—public self-registration is disabled for `refund-ops-26`, so please use `ops@shipkart.com` above to sign in to the Operations Console.
 
 ---
 
