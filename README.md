@@ -425,7 +425,6 @@ flowchart TB
 | **AI / Agent Stack** | `langgraph >=0.2.0`, `langchain-core >=0.3.0`, `langchain-nvidia-ai-endpoints >=0.3.0` | `refund_intelligence_platform/agent_backend/app/agents/` |
 | **Async / Storage / Security** | `celery >=5.4.0`, Redis `7`, MinIO `>=7.2.7`, `cryptography >=43.0.0`, `pyjwt[crypto] >=2.9.0`, `bcrypt >=4.0.1`, `reportlab >=4.2.0`, `pillow >=10.4.0`, `httpx >=0.27.0` | Both backends |
 | **Frontend Portals** | React `^18.3.1`, Vite `^5.4.11`, Tailwind CSS `^3.4.15`, `react-router-dom ^6.28.0`, `lucide-react ^0.460.0`, TypeScript `^5.6.3` (`ops_frontend`), Nginx (`nginx:alpine`) | `customer_frontend`, `merchant_frontend`, `ops_frontend` |
-| **Demo Video Studio (Ancillary)** | Remotion `^4.0.286`, `@remotion/player ^4.0.286`, React `^18.3.1` | `explainer_video/` |
 
 ---
 
@@ -434,6 +433,7 @@ flowchart TB
 ```text
 .
 ├── README.md                                  # Overall combined workspace documentation (this file)
+├── LICENSE                                    # MIT License
 ├── ecommerce_platform/                        # Platform 1: Shipkart marketplace (System of Record)
 │   ├── README.md                              # Standalone Shipkart documentation
 │   ├── docker-compose.yml                     # 5-service Compose stack (PG16, MinIO, API, Customer UI, Merchant UI)
@@ -442,15 +442,14 @@ flowchart TB
 │   ├── customer_frontend/                     # React SPA (:3000) + PayPal JS SDK + RefundIntelligencePanel
 │   ├── merchant_frontend/                     # React SPA (:3001) + Seller PayPal settings + return review
 │   └── docs/                                  # Mermaid architecture sources (.mmd) & analysis reports
-├── refund_intelligence_platform/              # Platform 2: Agentic Refund Intelligence & Resolution Platform
-│   ├── README.md                              # Standalone Agent Platform documentation
-│   ├── docker-compose.yml                     # 10-service Compose stack (PG16, Redis7, MinIO, API, Worker/Beat, 3 Sims, Ops UI)
-│   ├── render.yaml                            # Render Blueprint 2 (refund-agent-db, agent-api-26, ops-26, 3 sims)
-│   ├── agent_backend/                         # FastAPI (50 routes), LangGraph 3-agent core, Alembic migrations, Celery
-│   ├── ops_frontend/                          # React + TypeScript Operations Console (:3002, 9 pages)
-│   ├── simulators/                            # 3 standalone FastAPI mock services (issuer :8201, regulatory :8202, carrier :8203)
-│   └── docs/                                  # Mermaid architecture sources (.mmd) & analysis reports
-└── explainer_video/                           # Remotion + React 1.5-min explainer video studio & synced narration audio (:3005)
+└── refund_intelligence_platform/              # Platform 2: Agentic Refund Intelligence & Resolution Platform
+    ├── README.md                              # Standalone Agent Platform documentation
+    ├── docker-compose.yml                     # 10-service Compose stack (PG16, Redis7, MinIO, API, Worker/Beat, 3 Sims, Ops UI)
+    ├── render.yaml                            # Render Blueprint 2 (refund-agent-db, agent-api-26, ops-26, 3 sims)
+    ├── agent_backend/                         # FastAPI (50 routes), LangGraph 3-agent core, Alembic migrations, Celery
+    ├── ops_frontend/                          # React + TypeScript Operations Console (:3002, 9 pages)
+    ├── simulators/                            # 3 standalone FastAPI mock services (issuer :8201, regulatory :8202, carrier :8203)
+    └── docs/                                  # Mermaid architecture sources (.mmd) & analysis reports
 ```
 
 ---
