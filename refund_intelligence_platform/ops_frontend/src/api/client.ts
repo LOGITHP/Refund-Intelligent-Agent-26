@@ -427,4 +427,16 @@ export const opsApi = {
     const payload = await requestJson<unknown>(`/api/v1/operations/audit${qs}`);
     return unwrapList<AuditLogRecord>(payload, ['logs', 'audit_logs', 'items', 'results']);
   },
+
+  async syncShipkartPending(): Promise<{
+    scanned: number;
+    created: number;
+    already_present: number;
+    synced_case_ids: string[];
+    errors: Array<{ shipkart_return_id: number; error: string }>;
+  }> {
+    return requestJson('/api/v1/operations/sync-shipkart-pending', {
+      method: 'POST',
+    });
+  },
 };

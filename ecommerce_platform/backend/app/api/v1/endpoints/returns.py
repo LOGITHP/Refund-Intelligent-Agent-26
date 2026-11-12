@@ -68,12 +68,18 @@ def _relay_return_event_to_agent(
     *,
     event_type: str = "RETURN_REQUESTED",
     approval_reference: Optional[str] = None,
-) -> None:
-    """Best-effort HMAC-signed bridge webhook notifying Refund Intelligence Platform of a return."""
+    timeout_seconds: float = 25.0,
+    raise_on_error: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """HMAC-signed bridge webhook notifying Refund Intelligence Platform of a return."""
     agent_url = (settings.AGENT_PLATFORM_URL or "").strip().rstrip("/")
     bridge_secret = (settings.BRIDGE_SHARED_SECRET or "").strip()
     if not agent_url or not bridge_secret:
-        return
+        msg = "AGENT_PLATFORM_URL or BRIDGE_SHARED_SECRET is not configured on Shipkart API"
+        logger.warning("Skipping agent bridge relay for return %s: %s", return_req.return_number, msg)
+        if raise_on_error:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
+        return None
 
     status_value = (
         return_req.status.value
@@ -124,15 +130,38 @@ def _relay_return_event_to_agent(
     target = f"{agent_url}/api/v1/bridge/shipkart/return-event"
 
     try:
-        httpx.post(
+        resp = httpx.post(
             target,
             content=raw_body,
             headers={
                 "Content-Type": "application/json",
                 "X-Bridge-Signature": signature,
             },
-            timeout=2.0,
+            timeout=timeout_seconds,
         )
+        sc = getattr(resp, "status_code", 200)
+        if isinstance(sc, int) and sc >= 400:
+            body_preview = (getattr(resp, "text", "") or "")[:300]
+            logger.warning(
+                "Agent bridge relay HTTP %s for return %s (%s): %s",
+                sc,
+                return_req.return_number,
+                target,
+                body_preview,
+            )
+            if raise_on_error:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Agent bridge rejected return {return_req.return_number} with HTTP {sc}: {body_preview}",
+                )
+            return None
+        try:
+            data = resp.json()
+            return data if isinstance(data, dict) else {"status_code": sc}
+        except Exception:
+            return {"status_code": sc}
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.warning(
             "Best-effort agent bridge relay failed for return %s (%s): %s",
@@ -140,6 +169,12 @@ def _relay_return_event_to_agent(
             target,
             exc,
         )
+        if raise_on_error:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed reaching Agent bridge ({target}): {exc}",
+            ) from exc
+        return None
 
 
 def _execute_paypal_refund_if_applicable(
@@ -445,6 +480,40 @@ def get_return_paypal_refund_status(
         "is_real_paypal_refund": True,
         "amount": redacted.get("amount"),
         "paypal_payload": redacted,
+    }
+
+
+@router.post("/{return_id}/sync-agent")
+def sync_return_to_agent(
+    return_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """On-demand HMAC relay of an existing Shipkart return to Refund Intelligence Platform."""
+    ret = db.query(ReturnRequest).filter(ReturnRequest.id == return_id).first()
+    if not ret:
+        raise HTTPException(status_code=404, detail="Return request not found")
+
+    if current_user.role == UserRole.CUSTOMER and ret.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    if current_user.role == UserRole.MERCHANT and ret.merchant_id is not None and ret.merchant_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    order_item = db.query(OrderItem).filter(OrderItem.id == ret.order_item_id).first()
+    event_type = "RETURN_REQUESTED" if ret.status == ReturnStatus.REQUESTED else "RETURN_STATUS_UPDATED"
+    agent_result = _relay_return_event_to_agent(
+        ret,
+        ret.order,
+        order_item,
+        event_type=event_type,
+        timeout_seconds=30.0,
+        raise_on_error=True,
+    )
+    return {
+        "synced": True,
+        "shipkart_return_id": ret.id,
+        "return_number": ret.return_number,
+        "agent_response": agent_result,
     }
 
 

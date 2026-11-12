@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 import jwt
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -1745,4 +1745,113 @@ def list_operations_audit_logs(
         for row in rows
     ]
     return {"logs": logs, "count": len(logs)}
+
+
+@router.post("/sync-shipkart-pending")
+def sync_pending_returns_from_shipkart(
+    background_tasks: BackgroundTasks,
+    _actor: dict[str, Any] = Depends(_OPS_ROLES),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Pull active returns from Shipkart via Service JWT and idempotently provision missing cases."""
+    import os
+    from app.api.v1.internal_and_webhooks import (
+        BridgeReturnEventPayload,
+        _trigger_pipeline_bg,
+        upsert_shipkart_return_event,
+    )
+    from app.integrations.shipkart_client import ShipkartBridgeClient, ShipkartBridgeError
+
+    if not settings.SERVICE_JWT_SECRET.strip() or not settings.SHIPKART_API_URL.strip():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SHIPKART_API_URL and SERVICE_JWT_SECRET must both be configured to sync pending returns.",
+        )
+
+    client = ShipkartBridgeClient(timeout=25.0)
+    try:
+        pending = client.fetch_pending_returns()
+    except ShipkartBridgeError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    created_count = 0
+    existing_count = 0
+    errors: list[dict[str, Any]] = []
+    synced_case_ids: list[str] = []
+
+    for ret in pending:
+        ret_id = ret.get("id")
+        order_id = ret.get("order_id")
+        if ret_id is None or order_id is None:
+            continue
+        existing_rc = db.scalar(select(ReturnCase).where(ReturnCase.shipkart_return_id == int(ret_id)))
+        if existing_rc is not None:
+            existing_count += 1
+            continue
+        try:
+            order_ctx = client.fetch_order_context(int(order_id))
+            matched_item = next(
+                (i for i in (order_ctx.get("items") or []) if i.get("id") == ret.get("order_item_id")),
+                None,
+            )
+            qty = int(matched_item.get("quantity") or 1) if matched_item else 1
+            payload = BridgeReturnEventPayload.model_validate(
+                {
+                    "event_type": "RETURN_REQUESTED",
+                    "shipkart_return_id": int(ret_id),
+                    "shipkart_order_id": int(order_id),
+                    "shipkart_order_item_id": ret.get("order_item_id"),
+                    "shipkart_customer_id": int(ret.get("user_id") or order_ctx.get("user_id") or 0),
+                    "shipkart_merchant_id": ret.get("merchant_id") or (matched_item.get("merchant_id") if matched_item else None),
+                    "reason": ret.get("reason") or "RETURN_REQUEST",
+                    "comments": ret.get("comments") or "",
+                    "evidence_urls": list(ret.get("evidence_urls") or []),
+                    "quantity_requested": qty,
+                    "purchased_quantity": qty,
+                    "unit_price": str(matched_item["price"]) if matched_item and matched_item.get("price") is not None else None,
+                    "refund_amount": str(ret.get("refund_amount") or "0.00"),
+                    "refund_currency": ret.get("refund_currency") or order_ctx.get("original_currency") or "INR",
+                    "refund_paypal_amount": (
+                        str(ret["refund_paypal_amount"])
+                        if ret.get("refund_paypal_amount") is not None
+                        else None
+                    ),
+                    "captured_amount": (
+                        str(order_ctx["paypal_amount"])
+                        if order_ctx.get("paypal_amount") is not None
+                        else None
+                    ),
+                    "original_currency": order_ctx.get("original_currency") or "INR",
+                    "paypal_currency": order_ctx.get("paypal_currency") or "USD",
+                    "paypal_capture_id": order_ctx.get("paypal_capture_id"),
+                    "paypal_order_id": order_ctx.get("paypal_order_id"),
+                    "status": ret.get("status") or "REQUESTED",
+                    "refund_transaction_id": ret.get("refund_transaction_id"),
+                    "merchant_notes": ret.get("merchant_notes"),
+                }
+            )
+            created, _updated, _rc, refund_case = upsert_shipkart_return_event(db, payload)
+            if created and refund_case is not None:
+                created_count += 1
+                synced_case_ids.append(str(refund_case.id))
+                if "PYTEST_CURRENT_TEST" not in os.environ:
+                    background_tasks.add_task(
+                        _trigger_pipeline_bg,
+                        str(refund_case.id),
+                        payload.customer_description or payload.reason_code,
+                    )
+        except Exception as exc:
+            db.rollback()
+            errors.append({"shipkart_return_id": ret_id, "error": redact_sensitive_data(str(exc))})
+
+    return {
+        "scanned": len(pending),
+        "created": created_count,
+        "already_present": existing_count,
+        "synced_case_ids": synced_case_ids,
+        "errors": errors,
+    }
 

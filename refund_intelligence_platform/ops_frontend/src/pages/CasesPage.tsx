@@ -114,6 +114,9 @@ export function CasesPage() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<'investigate' | 'resolve' | null>(null);
   const [actionBanner, setActionBanner] = useState<string | null>(null);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const fetcher = useCallback(
     () =>
@@ -183,6 +186,30 @@ export function CasesPage() {
     }
   }
 
+  async function handleSyncShipkart() {
+    setSyncBusy(true);
+    setSyncMsg(null);
+    setSyncError(null);
+    try {
+      const res = await opsApi.syncShipkartPending();
+      setSyncMsg(
+        `Shipkart Sync: scanned ${res.scanned}, imported ${res.created}, already indexed ${res.already_present}${
+          res.errors.length > 0 ? ` (${res.errors.length} failed)` : ''
+        }.`
+      );
+      if (res.errors.length > 0) {
+        setSyncError(res.errors.map((e) => `#${e.shipkart_return_id}: ${e.error}`).join(' | '));
+      }
+      await reload();
+    } catch (err) {
+      setSyncError(
+        err instanceof OpsApiError ? `${err.code}: ${err.message}` : 'Shipkart bridge sync failed'
+      );
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
   const physicalEvents =
     detail?.physical_timeline && detail.physical_timeline.length > 0
       ? detail.physical_timeline
@@ -205,16 +232,38 @@ export function CasesPage() {
             3-agent investigation drill-down.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void reload()}
-          disabled={loading}
-          className="inline-flex items-center gap-1.5 rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleSyncShipkart()}
+            disabled={syncBusy || loading}
+            className="inline-flex items-center gap-1.5 rounded border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${syncBusy ? 'animate-spin' : ''}`} />
+            {syncBusy ? 'Syncing Shipkart…' : 'Sync from Shipkart'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void reload()}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {syncMsg && (
+        <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          {syncMsg}
+        </div>
+      )}
+      {syncError && (
+        <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {syncError}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="grid grid-cols-1 gap-3 rounded border border-gray-100 bg-white p-4 shadow-sm md:grid-cols-4">

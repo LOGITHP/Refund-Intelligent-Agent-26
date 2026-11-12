@@ -6,15 +6,19 @@ from celery import Celery
 
 from app.core.config import settings
 
+_use_eager = settings.CELERY_TASK_ALWAYS_EAGER or not (settings.REDIS_URL or "").strip()
+_broker_url = "memory://" if _use_eager else settings.CELERY_BROKER_URL
+_result_backend = "cache+memory://" if _use_eager else settings.CELERY_RESULT_BACKEND
+
 celery_app = Celery(
     "refund_intelligence_worker",
-    broker=settings.CELERY_BROKER_URL,
-    backend=settings.CELERY_RESULT_BACKEND,
+    broker=_broker_url,
+    backend=_result_backend,
     include=["app.worker.tasks"],
 )
 
 celery_app.conf.update(
-    task_always_eager=settings.CELERY_TASK_ALWAYS_EAGER,
+    task_always_eager=_use_eager,
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],

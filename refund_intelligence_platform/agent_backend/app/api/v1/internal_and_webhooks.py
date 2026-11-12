@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from sqlalchemy import select
@@ -559,20 +559,27 @@ def internal_audit_events(
 # ---------------------------------------------------------------------------
 # Shipkart HMAC Signed Bridge Event Ingestion
 # ---------------------------------------------------------------------------
-@router.post("/bridge/shipkart/return-event", tags=["Shipkart Bridge"])
-def ingest_shipkart_return_event(
-    raw_body: bytes = Depends(verify_bridge_hmac),
-    db: Session = Depends(get_db),
-) -> JSONResponse:
-    """Ingest HMAC-SHA256 signed Shipkart return event idempotently on shipkart_return_id."""
+def _trigger_pipeline_bg(case_id: str, reason_text: str) -> None:
     try:
-        payload = BridgeReturnEventPayload.model_validate_json(raw_body)
-    except ValidationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=json.loads(exc.json()),
-        ) from exc
+        from app.worker.tasks import run_agent_pipeline_task
 
+        if settings.CELERY_TASK_ALWAYS_EAGER or not (settings.REDIS_URL or "").strip():
+            run_agent_pipeline_task.apply(args=(case_id, reason_text))
+        else:
+            run_agent_pipeline_task.delay(case_id, reason_text)
+    except Exception as exc:
+        logger.warning(
+            "Could not run background agent investigation for case_id=%s: %s",
+            case_id,
+            redact_sensitive_data(str(exc)),
+        )
+
+
+def upsert_shipkart_return_event(
+    db: Session,
+    payload: BridgeReturnEventPayload,
+) -> tuple[bool, bool, ReturnCase, RefundCase | None]:
+    """Idempotently ingest or update a Shipkart return payload into ReturnCase + RefundCase."""
     existing_return = db.scalar(
         select(ReturnCase).where(ReturnCase.shipkart_return_id == payload.shipkart_return_id)
     )
@@ -642,17 +649,7 @@ def ingest_shipkart_return_event(
             db.commit()
             updated = True
 
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "created": False,
-                "updated": updated,
-                "shipkart_return_id": existing_return.shipkart_return_id,
-                "return_case_id": str(existing_return.id),
-                "refund_case_id": str(existing_refund.id) if existing_refund is not None else None,
-                "status": existing_refund.status if existing_refund is not None else existing_return.status,
-            },
-        )
+        return False, updated, existing_return, existing_refund
 
     return_case = ReturnService.create_return_case(
         db,
@@ -756,31 +753,42 @@ def ingest_shipkart_return_event(
     )
     ETAService().compute_and_persist_eta(db, refund_case.id)
     db.commit()
+    return True, False, return_case, refund_case
 
-    if "PYTEST_CURRENT_TEST" not in os.environ:
-        try:
-            from app.worker.tasks import run_agent_pipeline_task
 
-            run_agent_pipeline_task.delay(
-                str(refund_case.id),
-                payload.customer_description or payload.reason_code,
-            )
-        except Exception as exc:
-            logger.warning(
-                "Could not enqueue background agent investigation for return_id=%s: %s",
-                payload.shipkart_return_id,
-                redact_sensitive_data(str(exc)),
-            )
+@router.post("/bridge/shipkart/return-event", tags=["Shipkart Bridge"])
+def ingest_shipkart_return_event(
+    background_tasks: BackgroundTasks,
+    raw_body: bytes = Depends(verify_bridge_hmac),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Ingest HMAC-SHA256 signed Shipkart return event idempotently on shipkart_return_id."""
+    try:
+        payload = BridgeReturnEventPayload.model_validate_json(raw_body)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=json.loads(exc.json()),
+        ) from exc
+
+    created, updated, return_case, refund_case = upsert_shipkart_return_event(db, payload)
+
+    if created and refund_case is not None and "PYTEST_CURRENT_TEST" not in os.environ:
+        background_tasks.add_task(
+            _trigger_pipeline_bg,
+            str(refund_case.id),
+            payload.customer_description or payload.reason_code,
+        )
 
     return JSONResponse(
-        status_code=status.HTTP_201_CREATED,
+        status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         content={
-            "created": True,
-            "updated": False,
+            "created": created,
+            "updated": updated,
             "shipkart_return_id": return_case.shipkart_return_id,
             "return_case_id": str(return_case.id),
-            "refund_case_id": str(refund_case.id),
-            "status": refund_case.status,
+            "refund_case_id": str(refund_case.id) if refund_case is not None else None,
+            "status": refund_case.status if refund_case is not None else return_case.status,
         },
     )
 

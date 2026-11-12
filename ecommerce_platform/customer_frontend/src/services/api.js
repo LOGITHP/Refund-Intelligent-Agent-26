@@ -101,6 +101,10 @@ export const returnsApi = {
     }),
   myReturns: () => apiRequest('/returns/my'),
   get: (id) => apiRequest(`/returns/${id}`),
+  syncAgent: (returnId) =>
+    apiRequest(`/returns/${returnId}/sync-agent`, {
+      method: 'POST',
+    }),
 };
 
 export const mediaApi = {

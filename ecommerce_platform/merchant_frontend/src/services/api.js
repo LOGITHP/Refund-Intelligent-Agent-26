@@ -90,6 +90,10 @@ export const merchantOrdersApi = {
 
 export const merchantReturnsApi = {
   myReturns: () => apiRequest('/returns/merchant'),
+  syncAgent: (returnId) =>
+    apiRequest(`/returns/${returnId}/sync-agent`, {
+      method: 'POST',
+    }),
   decide: (returnId, payload) =>
     apiRequest(`/returns/${returnId}/decision`, {
       method: 'PATCH',

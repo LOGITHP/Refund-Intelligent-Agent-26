@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Sparkles,
   Clock,
@@ -16,7 +16,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { agentCustomerApi } from '../services/api';
+import { agentCustomerApi, returnsApi } from '../services/api';
 
 const QUICK_PROMPTS = [
   "Why hasn't my bank credited yet?",
@@ -41,6 +41,7 @@ export default function RefundIntelligencePanel({ shipkartReturn, defaultOpen = 
   const [intel, setIntel] = useState(null);
   const [notIndexed, setNotIndexed] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const autoSyncedRef = useRef(false);
 
   const [investigating, setInvestigating] = useState(false);
   const [timelineTab, setTimelineTab] = useState('both');
@@ -68,8 +69,18 @@ export default function RefundIntelligencePanel({ shipkartReturn, defaultOpen = 
     setNotIndexed(false);
 
     try {
-      const listData = await agentCustomerApi.findRefundByReturnId(shipkartReturn.id);
-      const match = listData?.items?.[0];
+      let listData = await agentCustomerApi.findRefundByReturnId(shipkartReturn.id);
+      let match = listData?.items?.[0];
+      if (!match?.id && !autoSyncedRef.current) {
+        autoSyncedRef.current = true;
+        try {
+          await returnsApi.syncAgent(shipkartReturn.id);
+          listData = await agentCustomerApi.findRefundByReturnId(shipkartReturn.id);
+          match = listData?.items?.[0];
+        } catch (syncErr) {
+          setError(syncErr.message || 'Unable to sync return to Refund Intelligence Agent');
+        }
+      }
       if (!match?.id) {
         setIntel(null);
         setNotIndexed(true);
@@ -288,17 +299,27 @@ export default function RefundIntelligencePanel({ shipkartReturn, defaultOpen = 
               Loading verified refund intelligence dossier...
             </div>
           ) : notIndexed ? (
-            <div className="bg-gray-50 border border-gray-200 rounded p-3 text-xs text-gray-600 flex items-center justify-between gap-3">
-              <span>
-                This return request has not yet synced to the Refund Intelligence Assistant.
-              </span>
-              <button
-                type="button"
-                onClick={loadIntelligence}
-                className="text-xs font-bold text-fk-blue hover:underline flex items-center gap-1"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Check Again
-              </button>
+            <div className="bg-gray-50 border border-gray-200 rounded p-3 text-xs text-gray-600 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span>
+                  This return request has not yet synced to the Refund Intelligence Assistant.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    autoSyncedRef.current = false;
+                    loadIntelligence();
+                  }}
+                  className="text-xs font-bold text-fk-blue hover:underline flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Sync &amp; Check Again
+                </button>
+              </div>
+              {error && (
+                <p className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
+                  {error}
+                </p>
+              )}
             </div>
           ) : intel && refundCase ? (
             <>

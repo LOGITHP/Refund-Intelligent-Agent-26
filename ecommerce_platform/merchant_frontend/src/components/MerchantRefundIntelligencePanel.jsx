@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Bot,
   Clock,
@@ -58,6 +58,7 @@ export default function MerchantRefundIntelligencePanel({
   const [error, setError] = useState('');
   const [actionMsg, setActionMsg] = useState('');
   const [dossier, setDossier] = useState(null);
+  const autoSyncedRef = useRef(false);
 
   const [investigating, setInvestigating] = useState(false);
   const [acting, setActing] = useState(false);
@@ -80,8 +81,18 @@ export default function MerchantRefundIntelligencePanel({
     setNotIndexed(false);
 
     try {
-      const listData = await agentMerchantApi.findRefundByReturnId(shipkartReturn.id);
-      const match = listData?.items?.[0];
+      let listData = await agentMerchantApi.findRefundByReturnId(shipkartReturn.id);
+      let match = listData?.items?.[0];
+      if (!match?.id && !autoSyncedRef.current) {
+        autoSyncedRef.current = true;
+        try {
+          await merchantReturnsApi.syncAgent(shipkartReturn.id);
+          listData = await agentMerchantApi.findRefundByReturnId(shipkartReturn.id);
+          match = listData?.items?.[0];
+        } catch (syncErr) {
+          setError(syncErr.message || 'Unable to sync return to Refund Intelligence Agent');
+        }
+      }
       if (!match?.id) {
         setDossier(null);
         setNotIndexed(true);
@@ -302,15 +313,25 @@ export default function MerchantRefundIntelligencePanel({
               Loading AI investigation dossier...
             </div>
           ) : notIndexed ? (
-            <div className="bg-white border border-gray-200 rounded p-3 text-xs text-gray-600 flex items-center justify-between gap-2">
-              <span>No AI investigation case indexed yet for this return.</span>
-              <button
-                type="button"
-                onClick={loadInvestigation}
-                className="text-xs font-bold text-seller-blue hover:underline flex items-center gap-1"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Check Again
-              </button>
+            <div className="bg-white border border-gray-200 rounded p-3 text-xs text-gray-600 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span>No AI investigation case indexed yet for this return.</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    autoSyncedRef.current = false;
+                    loadInvestigation();
+                  }}
+                  className="text-xs font-bold text-seller-blue hover:underline flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Sync &amp; Check Again
+                </button>
+              </div>
+              {error && (
+                <p className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
+                  {error}
+                </p>
+              )}
             </div>
           ) : dossier && refundCase ? (
             <>
