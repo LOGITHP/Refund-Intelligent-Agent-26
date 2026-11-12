@@ -23,12 +23,22 @@ class MinIOStorageService:
         self._last_attempt: float = 0.0
         self._connect()
 
-    def _connect(self) -> None:
-        self._last_attempt = time.time()
+    def _effective_endpoint(self) -> str:
         endpoint = (settings.MINIO_ENDPOINT or "").strip()
         if not endpoint:
+            return ""
+        if os.getenv("RENDER", "").strip().lower() == "true" and (
+            endpoint.startswith("localhost") or endpoint.startswith("127.0.0.1")
+        ):
+            return ""
+        return endpoint
+
+    def _connect(self) -> None:
+        self._last_attempt = time.time()
+        endpoint = self._effective_endpoint()
+        if not endpoint:
             self.available = False
-            logger.info("MINIO_ENDPOINT is empty. Using local filesystem fallback at %s.", FALLBACK_DIR)
+            logger.info("MinIO disabled (empty or local-only endpoint). Using local filesystem fallback at %s.", FALLBACK_DIR)
             return
         try:
             http_client = urllib3.PoolManager(
@@ -55,6 +65,8 @@ class MinIOStorageService:
             )
 
     def ensure_connection(self) -> bool:
+        if not self._effective_endpoint():
+            return False
         if not self.available and (time.time() - self._last_attempt > 30.0):
             self._connect()
         return self.available
@@ -66,7 +78,7 @@ class MinIOStorageService:
             settings.BUCKET_RETURN_EVIDENCE,
         ]
         # In Docker Compose (e.g., minio:9000), briefly wait for MinIO readiness
-        endpoint = (settings.MINIO_ENDPOINT or "").strip()
+        endpoint = self._effective_endpoint()
         if not self.available and endpoint and not endpoint.startswith("localhost"):
             for _ in range(10):
                 self._connect()

@@ -173,6 +173,18 @@ def seed_initial_data():
             elif existing.sandbox_usd_price is None or Decimal(str(existing.sandbox_usd_price)) == Decimal("10.00"):
                 existing.sandbox_usd_price = item["sandbox_usd_price"]
 
+            if existing:
+                existing_bytes, _ = minio_storage.get_file(settings.BUCKET_PRODUCT_IMAGES, item["filename"])
+                if existing_bytes is None:
+                    svg_data = generate_svg_icon(item["title"], item["category"], item["color"])
+                    minio_storage.upload_bytes(
+                        bucket=settings.BUCKET_PRODUCT_IMAGES,
+                        object_name=item["filename"],
+                        data=svg_data,
+                        content_type="image/svg+xml",
+                    )
+                    logger.info("Restored missing starter product image: %s", item["filename"])
+
         db.commit()
     except Exception as exc:
         logger.error("Error during starter catalog seed: %s", exc)
