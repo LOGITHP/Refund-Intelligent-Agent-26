@@ -1,10 +1,3 @@
-databases:
-  - name: refund-agent-db
-    databaseName: refund_intelligence
-    user: refund_agent
-    plan: free
-    region: oregon
-
 services:
   - type: web
     name: refund-issuer-sim-26
@@ -45,9 +38,9 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: DATABASE_URL
-        fromDatabase:
-          name: refund-agent-db
-          property: connectionString
+        sync: false
+      - key: DB_SCHEMA
+        value: refund_intelligence
       - key: CELERY_TASK_ALWAYS_EAGER
         value: "true"
       - key: REDIS_URL

@@ -1,7 +1,8 @@
 from logging.config import fileConfig
+import re
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
 from app.core.config import settings
 from app.db.base import Base
@@ -41,11 +42,25 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-        )
+        schema = (settings.DB_SCHEMA or "").strip()
+        if schema and connection.dialect.name == "postgresql":
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", schema):
+                raise ValueError(f"Invalid DB_SCHEMA: {schema!r}")
+            connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+            connection.execute(text(f'SET search_path TO "{schema}", public'))
+            connection.commit()
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                version_table_schema=schema,
+                compare_type=True,
+            )
+        else:
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                compare_type=True,
+            )
 
         with context.begin_transaction():
             context.run_migrations()

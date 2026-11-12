@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     # PostgreSQL 16 (host port 5433 locally, postgres:5432 inside Docker)
     DATABASE_URL: str = "postgresql+psycopg://localhost:5433/refund_intelligence"
+    DB_SCHEMA: str = ""
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

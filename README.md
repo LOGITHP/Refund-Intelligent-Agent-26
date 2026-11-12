@@ -383,13 +383,12 @@ flowchart TB
     end
 
     subgraph RenderBP2["Render Blueprint 2: refund_intelligence_platform/render.yaml (oregon, free plan)"]
-        R_AGDB[("refund-agent-db\nManaged PostgreSQL")]
-        R_AGAPI["refund-agent-api-26\nAlembic + Uvicorn $PORT\nCELERY_TASK_ALWAYS_EAGER=true, REDIS_URL=''"]
+        R_AGAPI["refund-agent-api-26\nAlembic + Uvicorn $PORT\nDB_SCHEMA=refund_intelligence, CELERY_TASK_ALWAYS_EAGER=true"]
         R_OPS["refund-ops-26\nNginx $PORT + Vite Build envVars"]
         R_IS["refund-issuer-sim-26 (:PORT /health)"]
         R_RS["refund-regulatory-sim-26 (:PORT /health)"]
         R_CS["refund-carrier-sim-26 (:PORT /health)"]
-        R_AGDB --> R_AGAPI
+        R_SKDB -. "Shared PostgreSQL\nschema: refund_intelligence" .-> R_AGAPI
         R_OPS --> R_AGAPI
         R_AGAPI --> R_IS
         R_AGAPI --> R_RS
@@ -445,7 +444,7 @@ flowchart TB
 └── refund_intelligence_platform/              # Platform 2: Agentic Refund Intelligence & Resolution Platform
     ├── README.md                              # Standalone Agent Platform documentation
     ├── docker-compose.yml                     # 10-service Compose stack (PG16, Redis7, MinIO, API, Worker/Beat, 3 Sims, Ops UI)
-    ├── render.yaml                            # Render Blueprint 2 (refund-agent-db, agent-api-26, ops-26, 3 sims)
+    ├── render.yaml                            # Render Blueprint 2 (agent-api-26, ops-26, 3 sims; shares shipkart-db via DB_SCHEMA=refund_intelligence)
     ├── agent_backend/                         # FastAPI (50 routes), LangGraph 3-agent core, Alembic migrations, Celery
     ├── ops_frontend/                          # React + TypeScript Operations Console (:3002, 9 pages)
     ├── simulators/                            # 3 standalone FastAPI mock services (issuer :8201, regulatory :8202, carrier :8203)
@@ -558,7 +557,8 @@ Verified local ports:
 Deploy both Blueprints from the **repository root** as the Render repo context (Render resolves `./ecommerce_platform/...` and `./refund_intelligence_platform/...` paths relative to repo root):
 
 1. **Create Blueprint 1** pointing Render Blueprint Path to `ecommerce_platform/render.yaml` (`shipkart-db`, `shipkart-api-26`, `shipkart-customer-26`, `shipkart-merchant-26`).
-2. **Create Blueprint 2** pointing Render Blueprint Path to `refund_intelligence_platform/render.yaml` (`refund-agent-db`, `refund-issuer-sim-26`, `refund-regulatory-sim-26`, `refund-carrier-sim-26`, `refund-agent-api-26`, `refund-ops-26`).
+2. **Create Blueprint 2** pointing Render Blueprint Path to `refund_intelligence_platform/render.yaml` (`refund-issuer-sim-26`, `refund-regulatory-sim-26`, `refund-carrier-sim-26`, `refund-agent-api-26`, `refund-ops-26`).
+   - Because Render Free Tier permits **one** free PostgreSQL database per workspace, `refund-agent-api-26` reuses `shipkart-db`'s **Internal Database URL** for `DATABASE_URL` and sets `DB_SCHEMA=refund_intelligence` so Alembic + SQLAlchemy isolate all 19 agent tables (including `processed_webhook_events`) and triggers inside the `refund_intelligence` schema without colliding with Shipkart's `public` schema.
 3. **Configure matching cross-blueprint secrets & URLs (`sync: false`) in Render Dashboard:**
    - Set identical values on `shipkart-api-26` and `refund-agent-api-26` for:
      - `SECRET_KEY` (`shipkart-api-26`) **=** `JWT_SECRET_KEY` (`refund-agent-api-26`)

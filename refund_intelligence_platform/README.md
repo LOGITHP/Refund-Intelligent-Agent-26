@@ -706,7 +706,7 @@ flowchart TB
     CeleryWorker <--> Shipkart
 ```
 
-> **Render Blueprint Note ([render.yaml](file:///c:/Users/logit/Downloads/Paypal/refund_intelligence_platform/render.yaml)):** A Render free-tier Blueprint also exists deploying `refund-agent-db`, `refund-issuer-sim-26`, `refund-regulatory-sim-26`, `refund-carrier-sim-26`, `refund-agent-api-26`, and `refund-ops-26`, setting `CELERY_TASK_ALWAYS_EAGER="true"` and `REDIS_URL=""` (no separate Redis/Celery Beat containers on the free tier).
+> **Render Blueprint Note ([render.yaml](file:///c:/Users/logit/Downloads/Paypal/refund_intelligence_platform/render.yaml)):** A Render free-tier Blueprint deploys `refund-issuer-sim-26`, `refund-regulatory-sim-26`, `refund-carrier-sim-26`, `refund-agent-api-26`, and `refund-ops-26`, setting `DB_SCHEMA="refund_intelligence"` (so it can safely share `shipkart-db` on Render's 1-free-DB limit without schema/table collisions), `CELERY_TASK_ALWAYS_EAGER="true"`, and `REDIS_URL=""`.
 
 ---
 
